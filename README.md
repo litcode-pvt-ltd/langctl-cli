@@ -2,7 +2,17 @@
 
 > CLI-first translation management for developers
 
+<div align="center">
+
+**[🌐 Website](https://langctl.com)** • **[📖 Documentation](https://langctl.com/docs)** • **[🚀 Get Started](https://app.langctl.com/signup)** • **[💬 Support](https://langctl.com/contact)**
+
+</div>
+
+---
+
 Langctl is a powerful command-line tool that lets you manage translations directly from your terminal. Create projects, manage translation keys, invite team members, export in multiple formats, and integrate seamlessly into your CI/CD pipeline.
+
+**👉 New to Langctl?** Visit **[langctl.com](https://langctl.com)** to learn more about features, pricing, and see how Langctl compares to other translation tools.
 
 ## Features
 
@@ -29,12 +39,16 @@ npx langctl --help
 
 ## Quick Start
 
+> **📌 First time here?** Check out our [Getting Started Guide](https://langctl.com/docs/getting-started/introduction) on the website for a complete walkthrough!
+
 ### 1. Get Your API Key
 
-1. Visit [app.langctl.com](https://app.langctl.com) and sign in
+1. Visit **[app.langctl.com](https://app.langctl.com/signup)** and create a free account
 2. Go to **Settings → API Keys**
 3. Click **"Generate New Key"**
 4. Copy the key (it's only shown once!)
+
+> **💡 Tip:** Learn more about API keys and authentication at [langctl.com/docs/cli/authentication](https://langctl.com/docs/cli/authentication)
 
 ### 2. Authenticate
 
@@ -1163,20 +1177,34 @@ A: Yes! Store your API key as a secret and use it in your workflow. See [CI/CD I
 
 ---
 
-## Links
+## 🌟 Why Langctl?
 
-- **Website:** [langctl.com](https://langctl.com)
-- **Dashboard:** [app.langctl.com](https://app.langctl.com)
-- **Documentation:** [langctl.com/docs](https://langctl.com/docs)
-- **GitHub:** [github.com/siddharthsaxena0/langctl](https://github.com/siddharthsaxena0/langctl)
-- **Report Issues:** [github.com/siddharthsaxena0/langctl/issues](https://github.com/siddharthsaxena0/langctl/issues)
-- **Email Support:** [hello@langctl.com](mailto:hello@langctl.com)
+Tired of expensive translation management tools? Langctl offers:
+- ✅ **Free to start** - No credit card required
+- ✅ **90% cheaper** than enterprise alternatives
+- ✅ **Developer-first** - Built for your workflow
+- ✅ **AI-powered** - Context-aware translations
+- ✅ **Open source CLI** - Inspect, fork, contribute
+
+**[See pricing and compare features →](https://langctl.com/pricing)**
+
+---
+
+## 📚 Resources & Support
+
+- 🌐 **[Website](https://langctl.com)** - Features, pricing, and comparisons
+- 📖 **[Full Documentation](https://langctl.com/docs)** - Guides, tutorials, and best practices
+- 🎯 **[Quick Start Tutorial](https://langctl.com/docs/getting-started/quickstart)** - Step-by-step walkthrough
+- 💡 **[Integration Guides](https://langctl.com/docs/integrations/overview)** - React, Angular, Vue, iOS, Android, Flutter
+- 📊 **[Dashboard](https://app.langctl.com)** - Manage translations visually
+- 💬 **[Get Support](https://langctl.com/contact)** - Email us at [hello@langctl.com](mailto:hello@langctl.com)
+- 🐛 **[Report Issues](https://github.com/siddharthsaxena0/langctl/issues)** - Bug reports and feature requests
 
 ---
 
 ## Contributing
 
-We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.md) for details.
+We welcome contributions! This is an open-source project and we'd love your help making it better.
 
 ---
 
@@ -1184,8 +1212,16 @@ We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
+Copyright © 2026 Litcode Private Limited. All rights reserved.
+
 ---
+
+<div align="center">
 
 **Built with ❤️ by the Langctl team**
 
 *Making translation management simple, fast, and developer-friendly.*
+
+**[Get Started Free →](https://app.langctl.com/signup)**
+
+</div>
