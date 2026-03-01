@@ -58,12 +58,14 @@ function getFileExtension(format: ExportFormat, language: string): string {
 export async function exportCommand(projectSlug: string, options: ExportOptions): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -147,5 +149,6 @@ export async function exportCommand(projectSlug: string, options: ExportOptions)
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to export translations'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

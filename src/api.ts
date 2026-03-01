@@ -26,9 +26,11 @@ export class ApiClient {
     }
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       'X-API-Key': this.apiKey,
     };
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const response = await fetch(url, {
       method,

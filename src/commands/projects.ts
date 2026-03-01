@@ -18,12 +18,14 @@ async function resolveProject(orgId: string, slug: string): Promise<any> {
 export async function projectsListCommand(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -61,6 +63,7 @@ export async function projectsListCommand(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch projects'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -70,12 +73,14 @@ export async function projectsListCommand(): Promise<void> {
 export async function projectsCreateCommand(name: string, options: any): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -99,6 +104,7 @@ export async function projectsCreateCommand(name: string, options: any): Promise
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to create project'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -108,12 +114,14 @@ export async function projectsCreateCommand(name: string, options: any): Promise
 export async function projectsGetCommand(slug: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -141,6 +149,7 @@ export async function projectsGetCommand(slug: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red(`Failed to fetch project "${slug}"`));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -150,12 +159,14 @@ export async function projectsGetCommand(slug: string): Promise<void> {
 export async function projectsUpdateCommand(slug: string, options: any): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -170,7 +181,46 @@ export async function projectsUpdateCommand(slug: string, options: any): Promise
     if (options.description !== undefined) updateData.description = options.description;
     if (options.defaultLanguage) updateData.defaultLanguage = options.defaultLanguage;
 
-    await api.patch(`/orgs/${orgId}/projects/${project.id}`, updateData);
+    // Keep support for --languages by reconciling desired list through add/remove-language APIs.
+    let targetLanguages: string[] | null = null;
+    if (options.languages) {
+      const parsedLanguages = options.languages
+        .split(',')
+        .map((lang: string) => lang.trim())
+        .filter((lang: string) => lang.length > 0);
+
+      if (parsedLanguages.length === 0) {
+        throw new Error('At least one language must be provided when using --languages');
+      }
+
+      const effectiveDefaultLanguage = options.defaultLanguage || project.defaultLanguage;
+      if (!parsedLanguages.includes(effectiveDefaultLanguage)) {
+        throw new Error(
+          `Default language "${effectiveDefaultLanguage}" must be included in --languages`
+        );
+      }
+
+      targetLanguages = parsedLanguages;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await api.patch(`/orgs/${orgId}/projects/${project.id}`, updateData);
+    }
+
+    if (targetLanguages) {
+      const desiredLanguages = targetLanguages;
+      const currentLanguages = project.languages || [];
+      const toAdd = desiredLanguages.filter((lang) => !currentLanguages.includes(lang));
+      const toRemove = currentLanguages.filter((lang: string) => !desiredLanguages.includes(lang));
+
+      for (const lang of toAdd) {
+        await api.post(`/orgs/${orgId}/projects/${project.id}/languages`, { code: lang });
+      }
+
+      for (const lang of toRemove) {
+        await api.delete(`/orgs/${orgId}/projects/${project.id}/languages/${lang}`);
+      }
+    }
 
     spinner.succeed(chalk.green(`Updated project: ${slug}`));
     console.log('');
@@ -178,6 +228,7 @@ export async function projectsUpdateCommand(slug: string, options: any): Promise
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to update project'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -187,12 +238,14 @@ export async function projectsUpdateCommand(slug: string, options: any): Promise
 export async function projectsDeleteCommand(slug: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -210,6 +263,7 @@ export async function projectsDeleteCommand(slug: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to delete project'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -219,12 +273,14 @@ export async function projectsDeleteCommand(slug: string): Promise<void> {
 export async function projectsAddLanguageCommand(slug: string, language: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -242,6 +298,7 @@ export async function projectsAddLanguageCommand(slug: string, language: string)
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to add language'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -251,12 +308,14 @@ export async function projectsAddLanguageCommand(slug: string, language: string)
 export async function projectsRemoveLanguageCommand(slug: string, language: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -274,6 +333,7 @@ export async function projectsRemoveLanguageCommand(slug: string, language: stri
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to remove language'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -283,12 +343,14 @@ export async function projectsRemoveLanguageCommand(slug: string, language: stri
 export async function projectsStatsCommand(slug: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -316,5 +378,6 @@ export async function projectsStatsCommand(slug: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch statistics'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

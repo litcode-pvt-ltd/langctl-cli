@@ -10,12 +10,14 @@ import { config } from '../config.js';
 export async function listTeamCommand(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -46,6 +48,7 @@ export async function listTeamCommand(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to list team members'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -55,12 +58,14 @@ export async function listTeamCommand(): Promise<void> {
 export async function getTeamMemberCommand(email: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -89,6 +94,7 @@ export async function getTeamMemberCommand(email: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to get member details'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -98,12 +104,14 @@ export async function getTeamMemberCommand(email: string): Promise<void> {
 export async function inviteTeamMemberCommand(email: string, options: any): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -122,6 +130,7 @@ export async function inviteTeamMemberCommand(email: string, options: any): Prom
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to invite member'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -131,12 +140,14 @@ export async function inviteTeamMemberCommand(email: string, options: any): Prom
 export async function removeTeamMemberCommand(email: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -159,6 +170,7 @@ export async function removeTeamMemberCommand(email: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to remove member'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -168,18 +180,21 @@ export async function removeTeamMemberCommand(email: string): Promise<void> {
 export async function updateTeamRoleCommand(email: string, role: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const validRoles = ['viewer', 'member', 'admin', 'owner'];
   if (!validRoles.includes(role)) {
     console.log(chalk.red(`✗ Invalid role. Must be one of: ${validRoles.join(', ')}\n`));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -202,6 +217,7 @@ export async function updateTeamRoleCommand(email: string, role: string): Promis
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to update role'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -211,12 +227,14 @@ export async function updateTeamRoleCommand(email: string, role: string): Promis
 export async function listInvitationsCommand(options: any): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -224,7 +242,11 @@ export async function listInvitationsCommand(options: any): Promise<void> {
 
   try {
     const api = getApiClient();
-    const result = await api.get<any>(`/orgs/${orgId}/invitations`);
+    const params: Record<string, string> = {};
+    if (options?.pending) {
+      params.status = 'pending';
+    }
+    const result = await api.get<any>(`/orgs/${orgId}/invitations`, params);
     const invitations = result.invitations || [];
 
     spinner.stop();
@@ -252,6 +274,7 @@ export async function listInvitationsCommand(options: any): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to list invitations'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -261,12 +284,14 @@ export async function listInvitationsCommand(options: any): Promise<void> {
 export async function revokeInvitationCommand(email: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -291,5 +316,6 @@ export async function revokeInvitationCommand(email: string): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to revoke invitation'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

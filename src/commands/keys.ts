@@ -31,12 +31,14 @@ async function findKeyByName(orgId: string, projectId: string, keyName: string):
 export async function listKeysCommand(projectSlug: string, options: any): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -45,10 +47,16 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
   try {
     const project = await resolveProject(orgId, projectSlug);
 
+    const limit = Math.max(1, parseInt(options.limit || '100', 10) || 100);
+    const offset = Math.max(0, parseInt(options.offset || '0', 10) || 0);
+    const skipWithinPage = offset % limit;
+    const page = Math.floor(offset / limit) + 1;
+    const pageSize = Math.min(100, limit + skipWithinPage);
+
     const api = getApiClient();
     const params: Record<string, string> = {
-      page: '1',
-      pageSize: options.limit || '100'
+      page: String(page),
+      pageSize: String(pageSize)
     };
     if (options.module) params.module = options.module;
     if (options.search) params.search = options.search;
@@ -58,7 +66,11 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
 
     spinner.stop();
 
-    const keys = result.data;
+    let keys = result.data || [];
+    if (skipWithinPage > 0) {
+      keys = keys.slice(skipWithinPage);
+    }
+    keys = keys.slice(0, limit);
     const total = result.pagination?.total;
 
     if (!keys || keys.length === 0) {
@@ -87,6 +99,7 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to list keys'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -96,12 +109,14 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
 export async function getKeyCommand(projectSlug: string, keyName: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -137,6 +152,7 @@ export async function getKeyCommand(projectSlug: string, keyName: string): Promi
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to get key'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -150,12 +166,14 @@ export async function createKeyCommand(
 ): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -190,6 +208,7 @@ export async function createKeyCommand(
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to create key'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -199,12 +218,14 @@ export async function createKeyCommand(
 export async function deleteKeyCommand(projectSlug: string, keyName: string): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -228,6 +249,7 @@ export async function deleteKeyCommand(projectSlug: string, keyName: string): Pr
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to delete key'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -241,12 +263,14 @@ export async function translateKeyCommand(
 ): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -273,6 +297,7 @@ export async function translateKeyCommand(
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to update translation'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -286,12 +311,14 @@ export async function publishKeysCommand(
 ): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -327,5 +354,6 @@ export async function publishKeysCommand(
   } catch (error: any) {
     spinner.fail(chalk.red(`Failed to ${action} keys`));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

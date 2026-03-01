@@ -7,12 +7,14 @@ import { config } from '../config.js';
 export async function debugListApiKeys(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -32,18 +34,21 @@ export async function debugListApiKeys(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('API connection failed'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
 export async function debugListOrganizations(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -57,5 +62,6 @@ export async function debugListOrganizations(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch organization'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

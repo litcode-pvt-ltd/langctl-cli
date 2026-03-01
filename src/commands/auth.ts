@@ -13,6 +13,7 @@ export async function authCommand(apiKey: string): Promise<void> {
     console.log(chalk.gray(`\nAPI Key saved to: ${config.getConfigPath()}\n`));
   } else {
     spinner.fail(chalk.red(result.message));
+    process.exitCode = 1;
     console.log(chalk.yellow('\nTroubleshooting:'));
     console.log(chalk.white('  - Check that your API key is correct'));
     console.log(chalk.white('  - Verify the key is not revoked in the dashboard'));

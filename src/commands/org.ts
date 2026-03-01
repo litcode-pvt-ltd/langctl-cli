@@ -10,12 +10,14 @@ import { config } from '../config.js';
 export async function orgInfoCommand(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -38,6 +40,7 @@ export async function orgInfoCommand(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch organization info'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -47,12 +50,14 @@ export async function orgInfoCommand(): Promise<void> {
 export async function orgStatsCommand(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -85,6 +90,7 @@ export async function orgStatsCommand(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch statistics'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }
 
@@ -94,12 +100,14 @@ export async function orgStatsCommand(): Promise<void> {
 export async function orgPlanCommand(): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -129,5 +137,6 @@ export async function orgPlanCommand(): Promise<void> {
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to fetch plan information'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

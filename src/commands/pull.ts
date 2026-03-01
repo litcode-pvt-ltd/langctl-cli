@@ -34,12 +34,14 @@ export async function pullCommand(projectIdentifier: string, options: PullOption
   // Check authentication
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -163,5 +165,6 @@ export async function pullCommand(projectIdentifier: string, options: PullOption
   } catch (error: any) {
     spinner.fail(chalk.red('Failed to pull translations'));
     console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
   }
 }

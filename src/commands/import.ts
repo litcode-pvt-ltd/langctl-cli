@@ -10,6 +10,7 @@ interface ImportOptions {
   language: string;
   overwrite?: boolean;
   module?: string;
+  publish?: boolean;
 }
 
 /**
@@ -71,12 +72,14 @@ export async function importCommand(
 ): Promise<void> {
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
+  process.exitCode = 1;
     return;
   }
 
   const orgId = config.get('organizationId');
   if (!orgId) {
     console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+  process.exitCode = 1;
     return;
   }
 
@@ -115,17 +118,56 @@ export async function importCommand(
     const body: any = {
       language: options.language,
       translations,
-      overwriteExisting: options.overwrite !== false // default true
+      // Keep import safe by default; only overwrite when explicitly requested.
+      overwriteExisting: options.overwrite === true
     };
     if (options.module) body.module = options.module;
 
     const data = await api.post<any>(`/orgs/${orgId}/projects/${project.id}/import`, body);
+
+    let publishedCount = 0;
+    if (options.publish) {
+      spinner.text = 'Publishing imported keys...';
+
+      const keyNames = new Set(Object.keys(translations));
+      const keyIds: string[] = [];
+      let page = 1;
+      const pageSize = 100;
+
+      while (true) {
+        const keysPage = await api.get<any>(`/orgs/${orgId}/projects/${project.id}/keys`, {
+          page: String(page),
+          pageSize: String(pageSize)
+        });
+
+        for (const key of (keysPage.data || [])) {
+          if (keyNames.has(key.key)) {
+            keyIds.push(key.id);
+          }
+        }
+
+        const totalPages = keysPage.pagination?.totalPages || 1;
+        if (page >= totalPages) break;
+        page += 1;
+      }
+
+      if (keyIds.length > 0) {
+        await api.post(`/orgs/${orgId}/projects/${project.id}/keys/bulk-publish`, {
+          keyIds,
+          published: true
+        });
+        publishedCount = keyIds.length;
+      }
+    }
 
     spinner.succeed(chalk.green('Import completed successfully'));
 
     console.log(chalk.green(`\n✓ Created: ${data.created}`));
     console.log(chalk.blue(`✓ Updated: ${data.updated}`));
     console.log(chalk.yellow(`⊘ Skipped: ${data.skipped}`));
+    if (options.publish) {
+      console.log(chalk.magenta(`✓ Published: ${publishedCount}`));
+    }
     console.log(chalk.white(`  Total: ${data.total}`));
     console.log('');
 
@@ -134,10 +176,13 @@ export async function importCommand(
 
     if (error.code === 'ENOENT') {
       console.error(chalk.red(`Error: File not found: ${filePath}\n`));
+    process.exitCode = 1;
     } else if (error instanceof SyntaxError) {
       console.error(chalk.red(`Error: Invalid JSON file\n`));
+    process.exitCode = 1;
     } else {
       console.error(chalk.red(`Error: ${error.message}\n`));
+    process.exitCode = 1;
     }
   }
 }
