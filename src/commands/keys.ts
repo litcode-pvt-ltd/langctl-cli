@@ -1,39 +1,28 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import { isAuthenticated, getApiKey } from '../auth.js';
+import { isAuthenticated } from '../auth.js';
+import { getApiClient } from '../api.js';
+import { config } from '../config.js';
 
-const EDGE_FUNCTION_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/manage-translation-keys';
-const LIST_PROJECTS_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/list-projects';
-
-interface Project {
-  id: string;
-  name: string;
-  slug: string;
-  languages: string[];
+/**
+ * Resolve a project slug to a full project object
+ */
+async function resolveProject(orgId: string, slug: string): Promise<any> {
+  const api = getApiClient();
+  return api.get(`/orgs/${orgId}/projects/by-slug/${slug}`);
 }
 
 /**
- * Get project by slug
+ * Find a key by exact name within a project (search + exact match)
  */
-async function getProjectBySlug(apiKey: string, slug: string): Promise<Project | null> {
-  try {
-    const response = await fetch(LIST_PROJECTS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey
-      }
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json() as any;
-    if (!data.success || !data.projects) return null;
-
-    return data.projects.find((p: Project) => p.slug === slug) || null;
-  } catch (error) {
-    return null;
-  }
+async function findKeyByName(orgId: string, projectId: string, keyName: string): Promise<any | null> {
+  const api = getApiClient();
+  const result = await api.get<any>(`/orgs/${orgId}/projects/${projectId}/keys`, {
+    search: keyName,
+    pageSize: '100'
+  });
+  const key = result.data?.find((k: any) => k.key === keyName);
+  return key || null;
 }
 
 /**
@@ -45,49 +34,41 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const spinner = ora('Fetching keys...').start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list',
-        projectId: project.id,
-        module: options.module,
-        published: options.published,
-        search: options.search,
-        limit: options.limit || 100,
-        offset: options.offset || 0
-      })
-    });
+    const api = getApiClient();
+    const params: Record<string, string> = {
+      page: '1',
+      pageSize: options.limit || '100'
+    };
+    if (options.module) params.module = options.module;
+    if (options.search) params.search = options.search;
+    if (options.published) params.published = 'true';
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
+    const result = await api.get<any>(`/orgs/${orgId}/projects/${project.id}/keys`, params);
 
     spinner.stop();
 
-    if (!data.keys || data.keys.length === 0) {
+    const keys = result.data;
+    const total = result.pagination?.total;
+
+    if (!keys || keys.length === 0) {
       console.log(chalk.yellow('\nNo keys found\n'));
       return;
     }
 
-    console.log(chalk.blue.bold(`\n🔑 Translation Keys (${data.keys.length}${data.total ? ` of ${data.total}` : ''})\n`));
+    console.log(chalk.blue.bold(`\n🔑 Translation Keys (${keys.length}${total ? ` of ${total}` : ''})\n`));
 
-    data.keys.forEach((key: any) => {
+    keys.forEach((key: any) => {
       console.log(chalk.white.bold(key.key));
       if (key.description) {
         console.log(chalk.gray(`  Description: ${key.description}`));
@@ -96,7 +77,7 @@ export async function listKeysCommand(projectSlug: string, options: any): Promis
         console.log(chalk.gray(`  Module: ${key.module}`));
       }
       console.log(chalk.gray(`  Published: ${key.published ? chalk.green('Yes') : chalk.yellow('No')}`));
-      const langs = Object.keys(key.translations);
+      const langs = Object.keys(key.translations || {});
       if (langs.length > 0) {
         console.log(chalk.gray(`  Languages: ${langs.join(', ')}`));
       }
@@ -118,39 +99,18 @@ export async function getKeyCommand(projectSlug: string, keyName: string): Promi
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const spinner = ora('Fetching key...').start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
-    // First list to find the key ID
-    const listResponse = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list',
-        projectId: project.id,
-        search: keyName,
-        limit: 1
-      })
-    });
-
-    const listData = await listResponse.json() as any;
-
-    if (!listData.success || !listData.keys || listData.keys.length === 0) {
-      spinner.fail(chalk.red(`Key "${keyName}" not found`));
-      return;
-    }
-
-    const key = listData.keys.find((k: any) => k.key === keyName);
+    const key = await findKeyByName(orgId, project.id, keyName);
     if (!key) {
       spinner.fail(chalk.red(`Key "${keyName}" not found`));
       return;
@@ -169,7 +129,7 @@ export async function getKeyCommand(projectSlug: string, keyName: string): Promi
     }
     console.log(chalk.gray(`Published: ${key.published ? chalk.green('Yes') : chalk.yellow('No')}`));
     console.log(chalk.blue.bold('\nTranslations:'));
-    Object.entries(key.translations).forEach(([lang, value]) => {
+    Object.entries(key.translations || {}).forEach(([lang, value]) => {
       console.log(chalk.white(`  ${lang}: ${value}`));
     });
     console.log('');
@@ -193,15 +153,16 @@ export async function createKeyCommand(
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const spinner = ora('Creating key...').start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
     // Build translations object from --value-* options
     const translations: Record<string, string> = {};
@@ -214,28 +175,14 @@ export async function createKeyCommand(
       }
     });
 
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'create',
-        projectId: project.id,
-        key: keyName,
-        translations,
-        description: options.description,
-        module: options.module,
-        tags: options.tags ? options.tags.split(',') : []
-      })
+    const api = getApiClient();
+    await api.post(`/orgs/${orgId}/projects/${project.id}/keys`, {
+      key: keyName,
+      translations: Object.keys(translations).length > 0 ? translations : undefined,
+      description: options.description,
+      module: options.module,
+      tags: options.tags ? options.tags.split(',') : undefined
     });
-
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
 
     spinner.succeed(chalk.green(`Created key: ${keyName}`));
     console.log('');
@@ -255,58 +202,25 @@ export async function deleteKeyCommand(projectSlug: string, keyName: string): Pr
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const spinner = ora('Deleting key...').start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
-    // Find key ID
-    const listResponse = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list',
-        projectId: project.id,
-        search: keyName,
-        limit: 1
-      })
-    });
-
-    const listData = await listResponse.json() as any;
-    const key = listData.keys?.find((k: any) => k.key === keyName);
-
+    const key = await findKeyByName(orgId, project.id, keyName);
     if (!key) {
       spinner.fail(chalk.red(`Key "${keyName}" not found`));
       return;
     }
 
-    // Delete key
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'delete',
-        projectId: project.id,
-        keyId: key.id
-      })
-    });
-
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
+    const api = getApiClient();
+    await api.delete(`/orgs/${orgId}/projects/${project.id}/keys/${key.id}`);
 
     spinner.succeed(chalk.green(`Deleted key: ${keyName}`));
     console.log('');
@@ -330,60 +244,28 @@ export async function translateKeyCommand(
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const spinner = ora('Updating translation...').start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
-    // Find key ID
-    const listResponse = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list',
-        projectId: project.id,
-        search: keyName,
-        limit: 1
-      })
-    });
-
-    const listData = await listResponse.json() as any;
-    const key = listData.keys?.find((k: any) => k.key === keyName);
-
+    const key = await findKeyByName(orgId, project.id, keyName);
     if (!key) {
       spinner.fail(chalk.red(`Key "${keyName}" not found`));
       return;
     }
 
-    // Update translation
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'translate',
-        projectId: project.id,
-        keyId: key.id,
-        language: options.language,
-        value: options.value
-      })
-    });
-
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
+    const api = getApiClient();
+    await api.patch(
+      `/orgs/${orgId}/projects/${project.id}/keys/${key.id}/translations/${options.language}`,
+      { value: options.value }
+    );
 
     spinner.succeed(chalk.green(`Updated ${options.language} translation for ${keyName}`));
     console.log('');
@@ -407,33 +289,25 @@ export async function publishKeysCommand(
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
+    return;
+  }
+
   const action = options.unpublish ? 'unpublish' : 'publish';
   const spinner = ora(`${action === 'publish' ? 'Publishing' : 'Unpublishing'} keys...`).start();
 
   try {
-    const project = await getProjectBySlug(apiKey!, projectSlug);
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      return;
-    }
+    const project = await resolveProject(orgId, projectSlug);
 
-    // Get key IDs
-    const listResponse = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list',
-        projectId: project.id,
-        limit: 1000
-      })
+    // List all keys to match names to IDs
+    const api = getApiClient();
+    const result = await api.get<any>(`/orgs/${orgId}/projects/${project.id}/keys`, {
+      pageSize: '1000'
     });
 
-    const listData = await listResponse.json() as any;
-    const keyIds = listData.keys
+    const keyIds = result.data
       ?.filter((k: any) => keys.includes(k.key))
       .map((k: any) => k.id) || [];
 
@@ -442,28 +316,12 @@ export async function publishKeysCommand(
       return;
     }
 
-    // Publish/unpublish keys
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'publish',
-        projectId: project.id,
-        keyIds,
-        published: !options.unpublish
-      })
-    });
+    const response = await api.post<any>(
+      `/orgs/${orgId}/projects/${project.id}/keys/bulk-publish`,
+      { keyIds, published: !options.unpublish }
+    );
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
-
-    spinner.succeed(chalk.green(data.message));
+    spinner.succeed(chalk.green(response.message || `${action === 'publish' ? 'Published' : 'Unpublished'} ${response.count} key(s)`));
     console.log('');
 
   } catch (error: any) {

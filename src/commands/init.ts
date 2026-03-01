@@ -3,7 +3,6 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { config } from '../config.js';
 import { authenticate } from '../auth.js';
-import { initializeSupabase } from '../supabase.js';
 import { showLogo } from '../utils/banner.js';
 
 export async function initCommand(): Promise<void> {
@@ -28,15 +27,6 @@ export async function initCommand(): Promise<void> {
       console.log(chalk.yellow('\nSetup cancelled.'));
       return;
     }
-  }
-
-  // Initialize Supabase client (with hardcoded credentials - user doesn't need to know)
-  try {
-    initializeSupabase();
-  } catch (error) {
-    console.error(chalk.red('✗ Failed to connect to Langctl servers'));
-    console.error(chalk.red('Please check your internet connection and try again.\n'));
-    return;
   }
 
   // Ask for API key

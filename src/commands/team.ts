@@ -1,8 +1,8 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import { isAuthenticated, getApiKey } from '../auth.js';
-
-const TEAM_MANAGEMENT_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/manage-team-members';
+import { isAuthenticated } from '../auth.js';
+import { getApiClient } from '../api.js';
+import { config } from '../config.js';
 
 /**
  * List all team members
@@ -13,41 +13,32 @@ export async function listTeamCommand(): Promise<void> {
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora('Fetching team members...').start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list'
-      })
-    });
-
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
+    const api = getApiClient();
+    const members = await api.get<any[]>(`/orgs/${orgId}/members`);
 
     spinner.stop();
 
-    if (!data.members || data.members.length === 0) {
+    if (!members || members.length === 0) {
       console.log(chalk.yellow('\nNo team members found\n'));
       return;
     }
 
-    console.log(chalk.blue.bold(`\n👥 Team Members (${data.members.length})\n`));
+    console.log(chalk.blue.bold(`\n👥 Team Members (${members.length})\n`));
 
-    data.members.forEach((member: any) => {
-      console.log(chalk.white.bold(member.email || member.user_id));
+    members.forEach((member: any) => {
+      console.log(chalk.white.bold(member.email));
       console.log(chalk.gray(`  Role: ${member.role}`));
-      if (member.joined_at) {
-        console.log(chalk.gray(`  Joined: ${new Date(member.joined_at).toLocaleDateString()}`));
+      if (member.joinedAt) {
+        console.log(chalk.gray(`  Joined: ${new Date(member.joinedAt).toLocaleDateString()}`));
       }
       console.log('');
     });
@@ -67,37 +58,31 @@ export async function getTeamMemberCommand(email: string): Promise<void> {
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora('Fetching member details...').start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'get',
-        email
-      })
-    });
+    const api = getApiClient();
+    const members = await api.get<any[]>(`/orgs/${orgId}/members`);
+    const member = members.find((m: any) => m.email === email);
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
+    if (!member) {
+      throw new Error(`Member "${email}" not found`);
     }
 
     spinner.stop();
 
-    const member = data.member;
     console.log(chalk.blue.bold('\n👤 Team Member Details\n'));
     console.log(chalk.white.bold(`Email: ${member.email}`));
     console.log(chalk.gray(`Role: ${member.role}`));
-    console.log(chalk.gray(`User ID: ${member.user_id}`));
-    if (member.joined_at) {
-      console.log(chalk.gray(`Joined: ${new Date(member.joined_at).toLocaleString()}`));
+    console.log(chalk.gray(`User ID: ${member.userId}`));
+    if (member.joinedAt) {
+      console.log(chalk.gray(`Joined: ${new Date(member.joinedAt).toLocaleString()}`));
     }
     console.log('');
 
@@ -116,30 +101,22 @@ export async function inviteTeamMemberCommand(email: string, options: any): Prom
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora(`Inviting ${email}...`).start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'invite',
-        email,
-        role: options.role || 'member'
-      })
+    const api = getApiClient();
+    await api.post(`/orgs/${orgId}/invitations`, {
+      email,
+      role: options.role || 'member'
     });
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
-
-    spinner.succeed(chalk.green(data.message));
+    spinner.succeed(chalk.green(`Invitation sent to ${email}`));
     console.log('');
 
   } catch (error: any) {
@@ -157,29 +134,26 @@ export async function removeTeamMemberCommand(email: string): Promise<void> {
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora(`Removing ${email}...`).start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'remove',
-        email
-      })
-    });
+    const api = getApiClient();
+    const members = await api.get<any[]>(`/orgs/${orgId}/members`);
+    const member = members.find((m: any) => m.email === email);
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
+    if (!member) {
+      throw new Error(`Member "${email}" not found`);
     }
 
-    spinner.succeed(chalk.green(data.message));
+    await api.delete(`/orgs/${orgId}/members/${member.id}`);
+
+    spinner.succeed(chalk.green(`Removed ${email} from organization`));
     console.log('');
 
   } catch (error: any) {
@@ -203,30 +177,26 @@ export async function updateTeamRoleCommand(email: string, role: string): Promis
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora(`Updating role for ${email}...`).start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'update-role',
-        email,
-        role
-      })
-    });
+    const api = getApiClient();
+    const members = await api.get<any[]>(`/orgs/${orgId}/members`);
+    const member = members.find((m: any) => m.email === email);
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
+    if (!member) {
+      throw new Error(`Member "${email}" not found`);
     }
 
-    spinner.succeed(chalk.green(data.message));
+    await api.patch(`/orgs/${orgId}/members/${member.id}`, { role });
+
+    spinner.succeed(chalk.green(`Updated ${email} role to ${role}`));
     console.log('');
 
   } catch (error: any) {
@@ -244,46 +214,37 @@ export async function listInvitationsCommand(options: any): Promise<void> {
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora('Fetching invitations...').start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'list-invitations',
-        pending: options.pending || false
-      })
-    });
-
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
-    }
+    const api = getApiClient();
+    const result = await api.get<any>(`/orgs/${orgId}/invitations`);
+    const invitations = result.invitations || [];
 
     spinner.stop();
 
-    if (!data.invitations || data.invitations.length === 0) {
+    if (invitations.length === 0) {
       console.log(chalk.yellow('\nNo invitations found\n'));
       return;
     }
 
-    console.log(chalk.blue.bold(`\n✉️  Invitations (${data.invitations.length})\n`));
+    console.log(chalk.blue.bold(`\n✉️  Invitations (${invitations.length})\n`));
 
-    data.invitations.forEach((invitation: any) => {
+    invitations.forEach((invitation: any) => {
       console.log(chalk.white.bold(invitation.email));
       console.log(chalk.gray(`  Role: ${invitation.role}`));
       console.log(chalk.gray(`  Status: ${invitation.status}`));
-      if (invitation.invited_at) {
-        console.log(chalk.gray(`  Invited: ${new Date(invitation.invited_at).toLocaleDateString()}`));
+      if (invitation.createdAt) {
+        console.log(chalk.gray(`  Invited: ${new Date(invitation.createdAt).toLocaleDateString()}`));
       }
-      if (invitation.expires_at) {
-        console.log(chalk.gray(`  Expires: ${new Date(invitation.expires_at).toLocaleDateString()}`));
+      if (invitation.expiresAt) {
+        console.log(chalk.gray(`  Expires: ${new Date(invitation.expiresAt).toLocaleDateString()}`));
       }
       console.log('');
     });
@@ -303,29 +264,28 @@ export async function revokeInvitationCommand(email: string): Promise<void> {
     return;
   }
 
-  const apiKey = getApiKey();
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
+    return;
+  }
+
   const spinner = ora(`Revoking invitation for ${email}...`).start();
 
   try {
-    const response = await fetch(TEAM_MANAGEMENT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey!
-      },
-      body: JSON.stringify({
-        action: 'revoke-invitation',
-        email
-      })
-    });
+    const api = getApiClient();
+    const result = await api.get<any>(`/orgs/${orgId}/invitations`);
+    const invitation = (result.invitations || []).find(
+      (inv: any) => inv.email === email && inv.status === 'pending'
+    );
 
-    const data = await response.json() as any;
-
-    if (!data.success) {
-      throw new Error(data.error);
+    if (!invitation) {
+      throw new Error(`No pending invitation found for "${email}"`);
     }
 
-    spinner.succeed(chalk.green(data.message));
+    await api.post(`/orgs/${orgId}/invitations/${invitation.id}/revoke`);
+
+    spinner.succeed(chalk.green(`Invitation for ${email} revoked`));
     console.log('');
 
   } catch (error: any) {

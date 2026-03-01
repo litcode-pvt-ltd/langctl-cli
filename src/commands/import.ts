@@ -2,59 +2,14 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { isAuthenticated, getApiKey } from '../auth.js';
-
-const PUSH_TRANSLATIONS_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/push-translations';
-const LIST_PROJECTS_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/list-projects';
+import { isAuthenticated } from '../auth.js';
+import { getApiClient } from '../api.js';
+import { config } from '../config.js';
 
 interface ImportOptions {
   language: string;
   overwrite?: boolean;
-  publish?: boolean;
-}
-
-interface PushResponse {
-  success: boolean;
-  created: number;
-  updated: number;
-  skipped: number;
-  errors: Array<{ key: string; error: string }>;
-  message?: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  slug: string;
-  languages: string[];
-}
-
-/**
- * Get project by slug
- */
-async function getProjectBySlug(apiKey: string, slug: string): Promise<Project | null> {
-  try {
-    const response = await fetch(LIST_PROJECTS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey
-      }
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json() as any;
-    if (!data.success || !data.projects) {
-      return null;
-    }
-
-    return data.projects.find((p: Project) => p.slug === slug) || null;
-  } catch (error) {
-    return null;
-  }
+  module?: string;
 }
 
 /**
@@ -114,15 +69,14 @@ export async function importCommand(
   filePath: string,
   options: ImportOptions
 ): Promise<void> {
-  // Check authentication
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
     return;
   }
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.log(chalk.red('✗ API key not found. Please run "langctl auth <api-key>" again.\n'));
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
     return;
   }
 
@@ -145,13 +99,8 @@ export async function importCommand(
     spinner.text = 'Fetching project...';
 
     // Get project by slug
-    const project = await getProjectBySlug(apiKey, projectSlug);
-
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      console.log(chalk.yellow('\nRun "langctl projects list" to see available projects.\n'));
-      return;
-    }
+    const api = getApiClient();
+    const project = await api.get<any>(`/orgs/${orgId}/projects/by-slug/${projectSlug}`);
 
     // Validate language
     if (!project.languages.includes(options.language)) {
@@ -162,59 +111,22 @@ export async function importCommand(
 
     spinner.text = `Importing ${keyCount} translations...`;
 
-    // Push translations
-    const response = await fetch(PUSH_TRANSLATIONS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey
-      },
-      body: JSON.stringify({
-        projectId: project.id,
-        language: options.language,
-        translations,
-        publish: options.publish || false,
-        createMissing: true
-      })
-    });
+    // Push translations via REST API
+    const body: any = {
+      language: options.language,
+      translations,
+      overwriteExisting: options.overwrite !== false // default true
+    };
+    if (options.module) body.module = options.module;
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({})) as any;
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json() as PushResponse;
-
-    if (!data.success && data.errors.length > 0) {
-      spinner.fail(chalk.red('Import completed with errors'));
-
-      console.log(chalk.green(`\n✓ Created: ${data.created}`));
-      console.log(chalk.blue(`✓ Updated: ${data.updated}`));
-      console.log(chalk.yellow(`⊘ Skipped: ${data.skipped}`));
-      console.log(chalk.red(`✗ Errors: ${data.errors.length}\n`));
-
-      if (data.errors.length > 0) {
-        console.log(chalk.red('Errors:'));
-        data.errors.slice(0, 5).forEach(err => {
-          console.log(chalk.red(`  - ${err.key}: ${err.error}`));
-        });
-        if (data.errors.length > 5) {
-          console.log(chalk.gray(`  ... and ${data.errors.length - 5} more errors\n`));
-        }
-      }
-      return;
-    }
+    const data = await api.post<any>(`/orgs/${orgId}/projects/${project.id}/import`, body);
 
     spinner.succeed(chalk.green('Import completed successfully'));
 
     console.log(chalk.green(`\n✓ Created: ${data.created}`));
     console.log(chalk.blue(`✓ Updated: ${data.updated}`));
     console.log(chalk.yellow(`⊘ Skipped: ${data.skipped}`));
-
-    if (options.publish) {
-      console.log(chalk.green('✓ Keys published'));
-    }
-
+    console.log(chalk.white(`  Total: ${data.total}`));
     console.log('');
 
   } catch (error: any) {

@@ -2,62 +2,53 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { isAuthenticated, getApiKey } from '../auth.js';
-
-const EDGE_FUNCTION_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/export-translations';
-const LIST_PROJECTS_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/list-projects';
-
-type ExportFormat = 'i18n-json' | 'android-xml' | 'ios-strings' | 'flutter-arb' | 'flat-json' | 'nested-json';
+import { isAuthenticated } from '../auth.js';
+import { getApiClient } from '../api.js';
+import { config } from '../config.js';
+import { exportTranslations, ExportFormat, TranslationKey } from '../exporters/index.js';
 
 interface ExportOptions {
   language?: string;
-  format?: ExportFormat;
+  format?: string;
   output?: string;
   module?: string;
   includeUnpublished?: boolean;
 }
 
-interface ExportResponse {
-  success: boolean;
-  content?: string;
-  filename?: string;
-  mimeType?: string;
-  error?: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  slug: string;
-  languages: string[];
-  default_language: string;
-}
+/**
+ * Map CLI format names to exporter format names
+ */
+const formatMap: Record<string, ExportFormat> = {
+  'flat-json': 'json',
+  'nested-json': 'json-nested',
+  'i18n-json': 'json',
+  'android-xml': 'android',
+  'ios-strings': 'ios',
+  'flutter-arb': 'flutter',
+  // Also accept exporter format names directly
+  'json': 'json',
+  'json-nested': 'json-nested',
+  'android': 'android',
+  'ios': 'ios',
+  'flutter': 'flutter',
+};
 
 /**
- * Get project by slug
+ * Get file extension for a given export format
  */
-async function getProjectBySlug(apiKey: string, slug: string): Promise<Project | null> {
-  try {
-    const response = await fetch(LIST_PROJECTS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey
-      }
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json() as any;
-    if (!data.success || !data.projects) {
-      return null;
-    }
-
-    return data.projects.find((p: Project) => p.slug === slug) || null;
-  } catch (error) {
-    return null;
+function getFileExtension(format: ExportFormat, language: string): string {
+  switch (format) {
+    case 'json':
+    case 'json-nested':
+      return `${language}.json`;
+    case 'android':
+      return `strings.xml`;
+    case 'ios':
+      return `Localizable.strings`;
+    case 'flutter':
+      return `intl_${language}.arb`;
+    default:
+      return `${language}.json`;
   }
 }
 
@@ -65,29 +56,24 @@ async function getProjectBySlug(apiKey: string, slug: string): Promise<Project |
  * Export translations command
  */
 export async function exportCommand(projectSlug: string, options: ExportOptions): Promise<void> {
-  // Check authentication
   if (!isAuthenticated()) {
     console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
     return;
   }
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.log(chalk.red('✗ API key not found. Please run "langctl auth <api-key>" again.\n'));
+  const orgId = config.get('organizationId');
+  if (!orgId) {
+    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
     return;
   }
 
   const spinner = ora('Fetching project...').start();
 
   try {
-    // Get project by slug
-    const project = await getProjectBySlug(apiKey, projectSlug);
+    const api = getApiClient();
 
-    if (!project) {
-      spinner.fail(chalk.red(`Project "${projectSlug}" not found`));
-      console.log(chalk.yellow('\nRun "langctl projects list" to see available projects.\n'));
-      return;
-    }
+    // Resolve project by slug
+    const project = await api.get<any>(`/orgs/${orgId}/projects/by-slug/${projectSlug}`);
 
     spinner.text = 'Exporting translations...';
 
@@ -103,49 +89,50 @@ export async function exportCommand(projectSlug: string, options: ExportOptions)
       return;
     }
 
-    const format = options.format || 'flat-json';
+    // Resolve format
+    const cliFormat = options.format || 'flat-json';
+    const exportFormat = formatMap[cliFormat];
+    if (!exportFormat) {
+      spinner.fail(chalk.red(`Unsupported format: ${cliFormat}`));
+      console.log(chalk.yellow(`Valid formats: ${Object.keys(formatMap).join(', ')}\n`));
+      return;
+    }
+
     const publishedOnly = !options.includeUnpublished;
 
     // Export each language
     for (const language of languages) {
       spinner.text = `Exporting ${language}...`;
 
-      const response = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          language,
-          format,
-          publishedOnly,
-          module: options.module
-        })
-      });
+      // Fetch flat translations from the API
+      const params: Record<string, string> = {
+        language,
+        publishedOnly: publishedOnly ? 'true' : 'false'
+      };
+      if (options.module) params.module = options.module;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any;
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
+      const result = await api.get<any>(`/orgs/${orgId}/projects/${project.id}/export`, params);
 
-      const data = await response.json() as ExportResponse;
+      // Convert flat translations to TranslationKey array for the exporter
+      const flatTranslations = result.translations || {};
+      const translationKeys: TranslationKey[] = Object.entries(flatTranslations).map(([key, value]) => ({
+        key,
+        translations: { [language]: value as string }
+      }));
 
-      if (!data.success || !data.content) {
-        throw new Error(data.error || 'Failed to export translations');
-      }
+      // Use client-side exporter for format conversion
+      const exportResult = exportTranslations(translationKeys, language, exportFormat);
 
       // Determine output path
       const outputPath = options.output
         ? options.output
-        : join(process.cwd(), 'translations', data.filename || `${language}.json`);
+        : join(process.cwd(), 'translations', getFileExtension(exportFormat, language));
 
       // Ensure directory exists
       mkdirSync(dirname(outputPath), { recursive: true });
 
       // Write file
-      writeFileSync(outputPath, data.content, 'utf-8');
+      writeFileSync(outputPath, exportResult.content, 'utf-8');
 
       spinner.succeed(chalk.green(`Exported ${language} → ${outputPath}`));
 

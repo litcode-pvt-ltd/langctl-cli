@@ -48,7 +48,7 @@ const program = new Command();
 // Package info
 const packageJson = {
   name: 'langctl',
-  version: '0.1.0',
+  version: '0.2.0',
   description: 'CLI-first translation management for developers'
 };
 
@@ -500,7 +500,7 @@ const debug = program
 
 debug
   .command('list-api-keys')
-  .description('List API keys visible to current Supabase credentials')
+  .description('Test API connection and show debug info')
   .action(async () => {
     try {
       await debugListApiKeys();
@@ -512,7 +512,7 @@ debug
 
 debug
   .command('list-organizations')
-  .description('List organizations visible to current Supabase credentials')
+  .description('Show current organization details')
   .action(async () => {
     try {
       await debugListOrganizations();

@@ -7,7 +7,10 @@ export interface LangctlConfig {
   apiKey?: string;
   organizationId?: string;
   organizationName?: string;
-  
+
+  // Connection settings
+  apiBaseUrl?: string;
+
   // User preferences (safe to store)
   defaultProject?: string;
   defaultLanguage?: string;

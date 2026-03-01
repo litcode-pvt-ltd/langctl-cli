@@ -1,24 +1,30 @@
 import { config } from './config.js';
+import { createApiClient } from './api.js';
 
 export interface ApiKeyData {
-  organization_id: string;
+  organizationId: string;
   organization: {
     id: string;
     name: string;
+    slug: string;
     plan: string;
   };
 }
 
-// Response from Edge Function
-interface VerifyApiKeyResponse {
-  success: boolean;
+// Response from POST /api-keys/validate
+interface ValidateApiKeyResponse {
+  valid: boolean;
   organizationId: string;
-  organizationName: string;
-  plan: string;
+  scopes: string[];
 }
 
-// Edge Function URL
-const EDGE_FUNCTION_URL = 'https://bcgnmvkgkbhbxzzflwdb.supabase.co/functions/v1/verify-api-key';
+// Response from GET /orgs/:orgId
+interface OrganizationResponse {
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+}
 
 // Normalize and validate API key input
 function sanitizeApiKey(input: string): { ok: boolean; key?: string; message?: string } {
@@ -35,7 +41,7 @@ function sanitizeApiKey(input: string): { ok: boolean; key?: string; message?: s
 }
 
 /**
- * Verify API key via Edge Function
+ * Verify API key via Fastify API
  */
 export async function verifyApiKey(plainTextKey: string): Promise<ApiKeyData | null> {
   try {
@@ -44,36 +50,31 @@ export async function verifyApiKey(plainTextKey: string): Promise<ApiKeyData | n
       return null;
     }
 
-    // Call Edge Function
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ apiKey: sanitized.key })
+    // Create a temporary API client with the key to validate
+    const client = createApiClient(sanitized.key);
+
+    // Validate the API key
+    const validateResult = await client.post<ValidateApiKeyResponse>('/api-keys/validate', {
+      apiKey: sanitized.key,
     });
 
-    if (!response.ok) {
+    if (!validateResult.valid) {
       return null;
     }
 
-    const data = await response.json() as VerifyApiKeyResponse;
+    // Fetch organization details
+    const org = await client.get<OrganizationResponse>(`/orgs/${validateResult.organizationId}`);
 
-    if (!data.success) {
-      return null;
-    }
-
-    // Map Edge Function response to ApiKeyData format
     return {
-      organization_id: data.organizationId,
+      organizationId: validateResult.organizationId,
       organization: {
-        id: data.organizationId,
-        name: data.organizationName,
-        plan: data.plan
-      }
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        plan: org.plan,
+      },
     };
   } catch (error) {
-    console.error('Error verifying API key:', error);
     return null;
   }
 }
@@ -90,29 +91,29 @@ export async function authenticate(apiKey: string): Promise<{
   if (!sanitized.ok || !sanitized.key) {
     return {
       success: false,
-      message: sanitized.message || 'Invalid API key format. Expected format: lc_[64 hex characters]'
+      message: sanitized.message || 'Invalid API key format. Expected format: lc_[64 hex characters]',
     };
   }
 
-  // Verify via Edge Function
+  // Verify via Fastify API
   const keyData = await verifyApiKey(sanitized.key);
 
   if (!keyData) {
     return {
       success: false,
-      message: 'Invalid or revoked API key. Please check your key and try again.'
+      message: 'Invalid or revoked API key. Please check your key and try again.',
     };
   }
 
   // Save to config
   config.set('apiKey', sanitized.key);
-  config.set('organizationId', keyData.organization_id);
+  config.set('organizationId', keyData.organizationId);
   config.set('organizationName', keyData.organization.name);
 
   return {
     success: true,
     message: `Successfully authenticated as ${keyData.organization.name}`,
-    data: keyData
+    data: keyData,
   };
 }
 

@@ -13,6 +13,7 @@ export function configCommand(): void {
 
   // Display config with masked sensitive values
   const displayConfig = {
+    apiBaseUrl: allConfig.apiBaseUrl || 'https://api.langctl.com/api/v1 (default)',
     apiKey: allConfig.apiKey ? maskApiKey(allConfig.apiKey) : undefined,
     organizationId: allConfig.organizationId,
     organizationName: allConfig.organizationName,
