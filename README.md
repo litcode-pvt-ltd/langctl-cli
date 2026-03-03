@@ -1,18 +1,23 @@
-# Langctl CLI
-
-> CLI-first translation management for developers
-
 <div align="center">
 
-**[🌐 Website](https://langctl.com)** • **[📖 Documentation](https://langctl.com/docs)** • **[🚀 Get Started](https://app.langctl.com/signup)** • **[💬 Support](https://langctl.com/contact)**
+# Langctl
+
+**CLI-first translation management for developers**
+
+[![npm version](https://img.shields.io/npm/v/langctl.svg)](https://www.npmjs.com/package/langctl)
+[![license](https://img.shields.io/npm/l/langctl.svg)](https://github.com/siddharthsaxena0/langctl/blob/main/LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/langctl.svg)](https://www.npmjs.com/package/langctl)
+
+**[Website](https://langctl.com)** · **[Documentation](https://langctl.com/docs)** · **[Get Started](https://app.langctl.com/signup)**
+
+<!-- Add a demo GIF here: -->
+<!-- ![langctl demo](assets/demo.gif) -->
 
 </div>
 
 ---
 
 Langctl is a powerful command-line tool that lets you manage translations directly from your terminal. Create projects, manage translation keys, invite team members, export in multiple formats, and integrate seamlessly into your CI/CD pipeline.
-
-**👉 New to Langctl?** Visit **[langctl.com](https://langctl.com)** to learn more about features, pricing, and see how Langctl compares to other translation tools.
 
 ## Features
 
