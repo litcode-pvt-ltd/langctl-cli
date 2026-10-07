@@ -1,383 +1,128 @@
 import chalk from 'chalk';
-import ora from 'ora';
-import { isAuthenticated } from '../auth.js';
-import { getApiClient } from '../api.js';
-import { config } from '../config.js';
+import { CliError, ExitCode, usageError } from '../core/errors.js';
+import { getSession } from '../core/http.js';
+import { log, printJson, runtime, table } from '../core/output.js';
+import { confirm } from '../core/prompts.js';
+import { getProject, type Project } from '../core/project.js';
+import { splitList } from './pull.js';
 
-/**
- * Resolve a project slug to a full project object
- */
-async function resolveProject(orgId: string, slug: string): Promise<any> {
-  const api = getApiClient();
-  return api.get(`/orgs/${orgId}/projects/by-slug/${slug}`);
-}
-
-/**
- * List all projects
- */
 export async function projectsListCommand(): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching projects...').start();
-
-  try {
-    const api = getApiClient();
-    const projects = await api.get<any[]>(`/orgs/${orgId}/projects`);
-
-    spinner.stop();
-
-    if (!projects || projects.length === 0) {
-      console.log(chalk.yellow('\nNo projects found. Create one in the dashboard first.\n'));
-      return;
-    }
-
-    console.log(chalk.blue.bold(`\n📦 Projects (${projects.length})\n`));
-
-    projects.forEach((project: any) => {
-      console.log(chalk.white.bold(project.name));
-      console.log(chalk.gray(`  Slug: ${project.slug}`));
-      if (project.description) {
-        console.log(chalk.gray(`  Description: ${project.description}`));
-      }
-      console.log(chalk.gray(`  Languages: ${project.languages.join(', ')}`));
-      console.log(chalk.gray(`  Default: ${project.defaultLanguage}`));
-      if (project.modules && project.modules.length > 0) {
-        console.log(chalk.gray(`  Modules: ${project.modules.join(', ')}`));
-      }
-      console.log('');
-    });
-
-    console.log(chalk.blue('To export translations, run:'));
-    console.log(chalk.white(`  langctl export ${projects[0].slug} -l en\n`));
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to fetch projects'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const projects = await session.api.get<Project[]>(`/orgs/${session.orgId}/projects`);
+  if (runtime.json) return printJson(projects);
+  if (projects.length === 0) return log.info('No projects yet. Create one with "langctl projects create <name>".');
+  table(projects.map(p => [p.slug, p.name, p.languages.join(','), p.defaultLanguage]), ['SLUG', 'NAME', 'LANGUAGES', 'DEFAULT']);
 }
 
-/**
- * Create new project
- */
-export async function projectsCreateCommand(name: string, options: any): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Creating project...').start();
-
-  try {
-    const api = getApiClient();
-    const languages = options.languages ? options.languages.split(',') : ['en'];
-    const defaultLanguage = options.defaultLanguage || languages[0];
-
-    const project = await api.post<any>(`/orgs/${orgId}/projects`, {
-      name,
-      description: options.description,
-      languages,
-      defaultLanguage
-    });
-
-    spinner.succeed(chalk.green(`Created project: ${name} (${project.slug})`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to create project'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
-}
-
-/**
- * Get project details
- */
 export async function projectsGetCommand(slug: string): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching project...').start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    spinner.stop();
-
-    console.log(chalk.blue.bold('\n📦 Project Details\n'));
-    console.log(chalk.white.bold(project.name));
-    console.log(chalk.gray(`Slug: ${project.slug}`));
-    console.log(chalk.gray(`ID: ${project.id}`));
-    if (project.description) {
-      console.log(chalk.gray(`Description: ${project.description}`));
-    }
-    console.log(chalk.gray(`Languages: ${project.languages.join(', ')}`));
-    console.log(chalk.gray(`Default Language: ${project.defaultLanguage}`));
-    if (project.modules && project.modules.length > 0) {
-      console.log(chalk.gray(`Modules: ${project.modules.join(', ')}`));
-    }
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red(`Failed to fetch project "${slug}"`));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  if (runtime.json) return printJson(project);
+  log.out(`${chalk.bold(project.name)} ${chalk.dim(`(${project.slug})`)}`);
+  if (project.description) log.out(chalk.dim(project.description));
+  log.out(`  languages  ${project.languages.join(', ')}  ${chalk.dim(`default ${project.defaultLanguage}`)}`);
+  if (project.modules?.length) log.out(`  modules    ${project.modules.join(', ')}`);
+  log.out(`  id         ${project.id}`);
 }
 
-/**
- * Update project
- */
-export async function projectsUpdateCommand(slug: string, options: any): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Updating project...').start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    const api = getApiClient();
-    const updateData: any = {};
-    if (options.name) updateData.name = options.name;
-    if (options.description !== undefined) updateData.description = options.description;
-    if (options.defaultLanguage) updateData.defaultLanguage = options.defaultLanguage;
-
-    // Keep support for --languages by reconciling desired list through add/remove-language APIs.
-    let targetLanguages: string[] | null = null;
-    if (options.languages) {
-      const parsedLanguages = options.languages
-        .split(',')
-        .map((lang: string) => lang.trim())
-        .filter((lang: string) => lang.length > 0);
-
-      if (parsedLanguages.length === 0) {
-        throw new Error('At least one language must be provided when using --languages');
-      }
-
-      const effectiveDefaultLanguage = options.defaultLanguage || project.defaultLanguage;
-      if (!parsedLanguages.includes(effectiveDefaultLanguage)) {
-        throw new Error(
-          `Default language "${effectiveDefaultLanguage}" must be included in --languages`
-        );
-      }
-
-      targetLanguages = parsedLanguages;
-    }
-
-    if (Object.keys(updateData).length > 0) {
-      await api.patch(`/orgs/${orgId}/projects/${project.id}`, updateData);
-    }
-
-    if (targetLanguages) {
-      const desiredLanguages = targetLanguages;
-      const currentLanguages = project.languages || [];
-      const toAdd = desiredLanguages.filter((lang) => !currentLanguages.includes(lang));
-      const toRemove = currentLanguages.filter((lang: string) => !desiredLanguages.includes(lang));
-
-      for (const lang of toAdd) {
-        await api.post(`/orgs/${orgId}/projects/${project.id}/languages`, { code: lang });
-      }
-
-      for (const lang of toRemove) {
-        await api.delete(`/orgs/${orgId}/projects/${project.id}/languages/${lang}`);
-      }
-    }
-
-    spinner.succeed(chalk.green(`Updated project: ${slug}`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to update project'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+export async function projectsCreateCommand(name: string, opts: { description?: string; languages?: string; defaultLanguage?: string }): Promise<void> {
+  const session = await getSession();
+  const languages = splitList(opts.languages ?? 'en');
+  const defaultLanguage = opts.defaultLanguage ?? languages[0];
+  if (!languages.includes(defaultLanguage)) throw usageError(`Default language "${defaultLanguage}" must be one of --languages (${languages.join(',')}).`);
+  const project = await session.api.post<Project>(`/orgs/${session.orgId}/projects`, { name, description: opts.description, languages, defaultLanguage });
+  if (runtime.json) return printJson(project);
+  log.success(`Created ${chalk.bold(project.name)} — slug ${chalk.cyan(project.slug)}`);
 }
 
-/**
- * Delete project
- */
+export async function projectsUpdateCommand(slug: string, opts: { name?: string; description?: string; languages?: string; defaultLanguage?: string }): Promise<void> {
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  const body: Record<string, unknown> = {};
+  if (opts.name) body.name = opts.name;
+  if (opts.description !== undefined) body.description = opts.description;
+  if (opts.defaultLanguage) body.defaultLanguage = opts.defaultLanguage;
+
+  let toAdd: string[] = [];
+  let toRemove: string[] = [];
+  if (opts.languages) {
+    const desired = splitList(opts.languages);
+    const effectiveDefault = opts.defaultLanguage ?? project.defaultLanguage;
+    if (!desired.includes(effectiveDefault)) throw usageError(`--languages must include the default language "${effectiveDefault}".`);
+    toAdd = desired.filter(l => !project.languages.includes(l));
+    toRemove = project.languages.filter(l => !desired.includes(l));
+  }
+  if (Object.keys(body).length === 0 && !toAdd.length && !toRemove.length) throw usageError('Nothing to update.');
+  if (toRemove.length && !(await confirm(`Remove ${toRemove.join(', ')} from ${project.slug} and delete all of their translations?`))) {
+    throw new CliError('Cancelled.', ExitCode.Error);
+  }
+
+  // Add new languages first so a new default language exists before it is set
+  for (const code of toAdd) await session.api.post(`/orgs/${session.orgId}/projects/${project.id}/languages`, { code });
+  if (Object.keys(body).length) await session.api.patch(`/orgs/${session.orgId}/projects/${project.id}`, body);
+  for (const code of toRemove) await session.api.delete(`/orgs/${session.orgId}/projects/${project.id}/languages/${encodeURIComponent(code)}`);
+
+  const updated = await getProject(session, slug);
+  if (runtime.json) return printJson(updated);
+  log.success(`Updated ${chalk.bold(updated.slug)}${toAdd.length ? ` +${toAdd.join(',')}` : ''}${toRemove.length ? ` -${toRemove.join(',')}` : ''}`);
+}
+
 export async function projectsDeleteCommand(slug: string): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Deleting project...').start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    const api = getApiClient();
-    await api.delete(`/orgs/${orgId}/projects/${project.id}`);
-
-    spinner.succeed(chalk.green(`Deleted project: ${slug}`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to delete project'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  if (!(await confirm(`Delete project "${project.slug}" and all of its translation keys?`))) throw new CliError('Cancelled.', ExitCode.Error);
+  await session.api.delete(`/orgs/${session.orgId}/projects/${project.id}`);
+  if (runtime.json) return printJson({ deleted: project.slug });
+  log.success(`Deleted project ${chalk.bold(project.slug)}`);
 }
 
-/**
- * Add language to project
- */
-export async function projectsAddLanguageCommand(slug: string, language: string): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
+export async function projectsAddLanguageCommand(slug: string, codes: string[]): Promise<void> {
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  const added: string[] = [];
+  for (const code of codes) {
+    if (project.languages.includes(code)) { log.info(`${code} is already in ${project.slug}`); continue; }
+    await session.api.post(`/orgs/${session.orgId}/projects/${project.id}/languages`, { code });
+    added.push(code);
   }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora(`Adding language ${language}...`).start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    const api = getApiClient();
-    await api.post(`/orgs/${orgId}/projects/${project.id}/languages`, { code: language });
-
-    spinner.succeed(chalk.green(`Added language "${language}" to project "${slug}"`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to add language'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  if (runtime.json) return printJson({ project: project.slug, added });
+  if (added.length) log.success(`Added ${added.join(', ')} to ${chalk.bold(project.slug)}`);
 }
 
-/**
- * Remove language from project
- */
-export async function projectsRemoveLanguageCommand(slug: string, language: string): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora(`Removing language ${language}...`).start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    const api = getApiClient();
-    await api.delete(`/orgs/${orgId}/projects/${project.id}/languages/${language}`);
-
-    spinner.succeed(chalk.green(`Removed language "${language}" from project "${slug}"`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to remove language'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+export async function projectsRemoveLanguageCommand(slug: string, codes: string[]): Promise<void> {
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  const missing = codes.filter(c => !project.languages.includes(c));
+  if (missing.length) throw usageError(`Not in ${project.slug}: ${missing.join(', ')}`);
+  if (codes.includes(project.defaultLanguage)) throw usageError(`"${project.defaultLanguage}" is the default language and can't be removed.`);
+  if (!(await confirm(`Remove ${codes.join(', ')} from ${project.slug} and delete all of their translations?`))) throw new CliError('Cancelled.', ExitCode.Error);
+  for (const code of codes) await session.api.delete(`/orgs/${session.orgId}/projects/${project.id}/languages/${encodeURIComponent(code)}`);
+  if (runtime.json) return printJson({ project: project.slug, removed: codes });
+  log.success(`Removed ${codes.join(', ')} from ${chalk.bold(project.slug)}`);
 }
 
-/**
- * Get project statistics
- */
+interface Stats {
+  totalKeys: number;
+  publishedKeys: number;
+  unpublishedKeys: number;
+  languageCount: number;
+  modules?: string[];
+}
+
 export async function projectsStatsCommand(slug: string): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ Organization ID not found. Please run "langctl auth <api-key>" again.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching statistics...').start();
-
-  try {
-    const project = await resolveProject(orgId, slug);
-
-    const api = getApiClient();
-    const stats = await api.get<any>(`/orgs/${orgId}/projects/${project.id}/stats`);
-
-    spinner.stop();
-
-    console.log(chalk.blue.bold('\n📊 Project Statistics\n'));
-    console.log(chalk.white(`Total Keys: ${stats.totalKeys}`));
-    console.log(chalk.green(`Published Keys: ${stats.publishedKeys}`));
-    console.log(chalk.yellow(`Unpublished Keys: ${stats.unpublishedKeys}`));
-    console.log(chalk.white(`Language Count: ${stats.languageCount}`));
-    if (stats.modules && stats.modules.length > 0) {
-      console.log(chalk.white(`Modules: ${stats.modules.length}`));
-      console.log(chalk.gray(`  ${stats.modules.join(', ')}`));
-    }
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to fetch statistics'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const project = await getProject(session, slug);
+  const [stats, snapshot] = await Promise.all([
+    session.api.get<Stats>(`/orgs/${session.orgId}/projects/${project.id}/stats`),
+    session.api.get<{ keys: Array<{ translations: Record<string, string> }> }>(
+      `/orgs/${session.orgId}/projects/${project.id}/export`, { publishedOnly: 'false' }),
+  ]);
+  const total = snapshot.keys.length;
+  const coverage = project.languages.map(lang => {
+    const translated = snapshot.keys.filter(k => k.translations[lang]).length;
+    return { language: lang, translated, missing: total - translated, percent: total ? Math.round((translated / total) * 100) : 100 };
+  });
+  if (runtime.json) return printJson({ ...stats, coverage });
+  log.out(`${chalk.bold(project.slug)}  ${stats.totalKeys} keys  ${chalk.green(`${stats.publishedKeys} published`)}  ${chalk.yellow(`${stats.unpublishedKeys} draft`)}`);
+  table(coverage.map(c => [c.language, `${c.translated}/${total}`, c.missing ? chalk.yellow(`${c.percent}%`) : chalk.green('100%')]), ['LANG', 'TRANSLATED', 'DONE']);
 }

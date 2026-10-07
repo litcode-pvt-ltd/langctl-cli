@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Install the packed tarball like a user would and make sure it runs
+      - name: Smoke test the published package
+        shell: bash
+        run: |
+          npm pack
+          npm install -g ./langctl-*.tgz
+          langctl --version
+          langctl --help > /dev/null
+          langctl formats
+          set +e; langctl projects list; code=$?; set -e
+          test "$code" = 3   # not authenticated → exit 3, no hang, no prompt
+
+  e2e:
+    # Runs against the real API when the repository has a test key configured
+    needs: test
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    env:
+      LANGCTL_API_KEY: ${{ secrets.LANGCTL_E2E_API_KEY }}
+      LANGCTL_E2E_PROJECT: ${{ vars.LANGCTL_E2E_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - name: End-to-end
+        if: ${{ env.LANGCTL_API_KEY != '' && env.LANGCTL_E2E_PROJECT != '' }}
+        run: npm run test:e2e

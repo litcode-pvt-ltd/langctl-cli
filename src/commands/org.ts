@@ -1,142 +1,75 @@
 import chalk from 'chalk';
-import ora from 'ora';
-import { isAuthenticated } from '../auth.js';
-import { getApiClient } from '../api.js';
-import { config } from '../config.js';
+import { getSession } from '../core/http.js';
+import { log, printJson, runtime, table } from '../core/output.js';
 
-/**
- * Get organization information
- */
+interface Org {
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+  createdAt: string;
+  maxMembers?: number | null;
+  maxProjects?: number | null;
+  maxKeysPerProject?: number | null;
+  maxApiKeys?: number | null;
+  maxLanguagesPerProject?: number | null;
+  aiTranslationsLimit?: number | null;
+  aiTranslationsUsedThisMonth?: number | null;
+}
+
+interface OrgStats {
+  memberCount: number;
+  projectCount: number;
+  totalKeys: number;
+  apiKeyCount: number;
+}
+
+const limit = (n: number | null | undefined) => (n === null || n === undefined ? 'unlimited' : String(n));
+
 export async function orgInfoCommand(): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching organization info...').start();
-
-  try {
-    const api = getApiClient();
-    const org = await api.get<any>(`/orgs/${orgId}`);
-
-    spinner.stop();
-
-    console.log(chalk.blue.bold('\n🏢 Organization Information\n'));
-    console.log(chalk.white.bold(org.name));
-    console.log(chalk.gray(`ID: ${org.id}`));
-    console.log(chalk.gray(`Slug: ${org.slug}`));
-    console.log(chalk.gray(`Plan: ${org.plan}`));
-    console.log(chalk.gray(`Created: ${new Date(org.createdAt).toLocaleDateString()}`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to fetch organization info'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const org = await session.api.get<Org>(`/orgs/${session.orgId}`);
+  const { id, name, slug, plan, createdAt } = org;
+  if (runtime.json) return printJson({ id, name, slug, plan, createdAt });
+  log.out(`${chalk.bold(name)} ${chalk.dim(`(${slug})`)}  ${plan} plan`);
+  log.out(chalk.dim(`id ${id} · created ${createdAt.slice(0, 10)}`));
 }
 
-/**
- * Get organization statistics
- */
 export async function orgStatsCommand(): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching organization statistics...').start();
-
-  try {
-    const api = getApiClient();
-    const stats = await api.get<any>(`/orgs/${orgId}/stats`);
-
-    spinner.stop();
-
-    console.log(chalk.blue.bold('\n📊 Organization Statistics\n'));
-
-    console.log(chalk.white.bold('Team'));
-    console.log(chalk.gray(`  Members: ${stats.memberCount}`));
-    console.log('');
-
-    console.log(chalk.white.bold('Projects'));
-    console.log(chalk.gray(`  Total Projects: ${stats.projectCount}`));
-    console.log('');
-
-    console.log(chalk.white.bold('Translation Keys'));
-    console.log(chalk.gray(`  Total Keys: ${stats.totalKeys}`));
-    console.log('');
-
-    console.log(chalk.white.bold('Resources'));
-    console.log(chalk.gray(`  API Keys: ${stats.apiKeyCount}`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to fetch statistics'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const stats = await session.api.get<OrgStats>(`/orgs/${session.orgId}/stats`);
+  if (runtime.json) return printJson(stats);
+  table([
+    ['Members', String(stats.memberCount)],
+    ['Projects', String(stats.projectCount)],
+    ['Translation keys', String(stats.totalKeys)],
+    ['Active API keys', String(stats.apiKeyCount)],
+  ]);
 }
 
-/**
- * Get organization plan and limits
- */
 export async function orgPlanCommand(): Promise<void> {
-  if (!isAuthenticated()) {
-    console.log(chalk.red('✗ Not authenticated. Please run "langctl auth <api-key>" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const orgId = config.get('organizationId');
-  if (!orgId) {
-    console.log(chalk.red('✗ No organization configured. Please run "langctl init" first.\n'));
-  process.exitCode = 1;
-    return;
-  }
-
-  const spinner = ora('Fetching plan information...').start();
-
-  try {
-    const api = getApiClient();
-    const org = await api.get<any>(`/orgs/${orgId}`);
-
-    spinner.stop();
-
-    console.log(chalk.blue.bold('\n💎 Subscription Plan\n'));
-    console.log(chalk.white.bold(`Current Plan: ${org.plan.toUpperCase()}`));
-    console.log('');
-
-    console.log(chalk.white.bold('Plan Limits'));
-
-    // Display limits with "Unlimited" for -1 or null values
-    const formatLimit = (value: number | null) => (value === -1 || value === null) ? chalk.green('Unlimited') : chalk.gray(value.toString());
-
-    console.log(chalk.gray(`  Max Members: ${formatLimit(org.maxMembers)}`));
-    console.log(chalk.gray(`  Max Projects: ${formatLimit(org.maxProjects)}`));
-    console.log(chalk.gray(`  Max Keys per Project: ${formatLimit(org.maxKeysPerProject)}`));
-    console.log(chalk.gray(`  Max API Keys: ${formatLimit(org.maxApiKeys)}`));
-    console.log('');
-
-  } catch (error: any) {
-    spinner.fail(chalk.red('Failed to fetch plan information'));
-    console.error(chalk.red(`Error: ${error.message}\n`));
-    process.exitCode = 1;
-  }
+  const session = await getSession();
+  const [org, stats] = await Promise.all([
+    session.api.get<Org>(`/orgs/${session.orgId}`),
+    session.api.get<OrgStats>(`/orgs/${session.orgId}/stats`),
+  ]);
+  const rows = {
+    plan: org.plan,
+    members: { used: stats.memberCount, limit: org.maxMembers ?? null },
+    projects: { used: stats.projectCount, limit: org.maxProjects ?? null },
+    apiKeys: { used: stats.apiKeyCount, limit: org.maxApiKeys ?? null },
+    keysPerProject: { limit: org.maxKeysPerProject ?? null },
+    languagesPerProject: { limit: org.maxLanguagesPerProject ?? null },
+    aiTranslationsPerMonth: { used: org.aiTranslationsUsedThisMonth ?? 0, limit: org.aiTranslationsLimit ?? null },
+  };
+  if (runtime.json) return printJson(rows);
+  log.out(`${chalk.bold(org.plan.toUpperCase())} plan`);
+  table([
+    ['Members', `${stats.memberCount} / ${limit(org.maxMembers)}`],
+    ['Projects', `${stats.projectCount} / ${limit(org.maxProjects)}`],
+    ['API keys', `${stats.apiKeyCount} / ${limit(org.maxApiKeys)}`],
+    ['Keys per project', limit(org.maxKeysPerProject)],
+    ['Languages per project', limit(org.maxLanguagesPerProject)],
+    ['AI translations / month', `${org.aiTranslationsUsedThisMonth ?? 0} / ${limit(org.aiTranslationsLimit)}`],
+  ]);
 }
