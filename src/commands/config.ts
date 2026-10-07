@@ -1,36 +1,38 @@
 import chalk from 'chalk';
-import { config } from '../config.js';
+import { configPath, loadProjectConfig, maskApiKey, readUserConfig, resolveApiUrl, resolveCredentials } from '../core/config.js';
+import { log, printJson, runtime } from '../core/output.js';
+import { FORMATS } from '../formats/index.js';
 
+/** Show effective configuration and where each value comes from (no network). */
 export function configCommand(): void {
-  console.log(chalk.blue.bold('\n📋 Langctl Configuration\n'));
-
-  const allConfig = config.getAll();
-
-  if (Object.keys(allConfig).length === 0) {
-    console.log(chalk.yellow('No configuration found. Run "langctl init" to set up.\n'));
-    return;
-  }
-
-  // Display config with masked sensitive values
-  const displayConfig = {
-    apiBaseUrl: allConfig.apiBaseUrl || 'https://api.langctl.com/api/v1 (default)',
-    apiKey: allConfig.apiKey ? maskApiKey(allConfig.apiKey) : undefined,
-    organizationId: allConfig.organizationId,
-    organizationName: allConfig.organizationName,
-    defaultProject: allConfig.defaultProject,
-    defaultLanguage: allConfig.defaultLanguage
+  const user = readUserConfig();
+  const creds = resolveCredentials();
+  const project = loadProjectConfig();
+  const data = {
+    apiUrl: resolveApiUrl(),
+    apiKey: creds ? maskApiKey(creds.apiKey) : null,
+    apiKeySource: creds ? (creds.source === 'env' ? 'LANGCTL_API_KEY' : creds.source === 'flag' ? '--api-key' : configPath()) : null,
+    organization: user.organizationName ?? null,
+    userConfig: configPath(),
+    projectConfig: project ? { path: project.path, ...project.config } : null,
   };
-
-  Object.entries(displayConfig).forEach(([key, value]) => {
-    if (value !== undefined) {
-      console.log(chalk.white(`${key}: ${chalk.cyan(value)}`));
-    }
-  });
-
-  console.log(chalk.gray(`\nConfig file: ${config.getConfigPath()}\n`));
+  if (runtime.json) return printJson(data);
+  log.out(`api url       ${data.apiUrl}`);
+  log.out(`api key       ${data.apiKey ?? chalk.yellow('not set')}${data.apiKeySource ? chalk.dim(`  (${data.apiKeySource})`) : ''}`);
+  if (data.organization) log.out(`organization  ${data.organization}`);
+  log.out(`user config   ${data.userConfig}`);
+  if (project) {
+    log.out(`project file  ${project.path}`);
+    for (const [k, v] of Object.entries(project.config)) log.out(chalk.dim(`  ${k}: ${JSON.stringify(v)}`));
+  } else {
+    log.out(`project file  ${chalk.dim('none — run "langctl init" to create langctl.json')}`);
+  }
 }
 
-function maskApiKey(key: string): string {
-  if (key.length < 10) return '***';
-  return `${key.substring(0, 10)}...${key.substring(key.length - 4)}`;
+export function formatsCommand(): void {
+  if (runtime.json) return printJson(FORMATS.map(f => ({ id: f.id, aliases: f.aliases, description: f.label, defaultOutput: f.defaultOutput })));
+  for (const f of FORMATS) {
+    log.out(`${chalk.bold(f.id.padEnd(12))} ${f.label}`);
+    log.out(chalk.dim(`${''.padEnd(12)} default path ${f.defaultOutput}${f.aliases.length ? ` · aliases ${f.aliases.join(', ')}` : ''}`));
+  }
 }
