@@ -154,6 +154,7 @@ Global flags (any position): `--json` · `-q/--quiet` · `--verbose` (log HTTP r
 | `LANGCTL_API_URL` | API base URL (default `https://api.langctl.com/api/v1`). |
 | `LANGCTL_TIMEOUT` | Request timeout in seconds (default 30). Idempotent requests are retried with backoff on network errors, 429 and 5xx. |
 | `LANGCTL_CONFIG_DIR` | Where the user config lives (default `~/.langctl`). |
+| `LANGCTL_NO_CACHE` | Set to `1` to disable the export cache (`~/.langctl/cache`). `pull` normally sends the last ETag and reuses the cached snapshot when the server answers 304 Not Modified. |
 | `NO_COLOR` / `CI` | Disable colors / force non-interactive mode. |
 | `NODE_EXTRA_CA_CERTS` | Trust a corporate proxy's CA. |
 

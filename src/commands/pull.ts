@@ -52,11 +52,12 @@ export async function pullCommand(projectArg: string | undefined, opts: PullOpti
   let project, snapshot: ExportSnapshot;
   try {
     project = await getProject(session, slug);
-    snapshot = await session.api.get<ExportSnapshot>(`/orgs/${session.orgId}/projects/${project.id}/export`, {
+    // ETag-cached: unchanged translations come back as a tiny 304 and the saved snapshot is reused
+    ({ data: snapshot } = await session.api.getCached<ExportSnapshot>(`/orgs/${session.orgId}/projects/${project.id}/export`, {
       publishedOnly: includeDrafts ? 'false' : 'true',
       includeUnreviewed: opts.includeUnreviewed ? 'true' : undefined,
       module,
-    });
+    }));
   } finally {
     spin.stop();
   }

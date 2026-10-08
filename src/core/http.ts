@@ -2,6 +2,7 @@ import { CliError, ExitCode, httpError, networkError } from './errors.js';
 import { requireCredentials, type Credentials } from './config.js';
 import { detectCi, log } from './output.js';
 import { VERSION } from '../version.js';
+import { cacheEnabled, cacheKey, readCache, writeCache } from './cache.js';
 
 export const httpSettings = {
   timeoutMs: Number(process.env.LANGCTL_TIMEOUT || 30) * 1000,
@@ -20,7 +21,11 @@ export interface RequestOptions {
   body?: unknown;
   /** Safe to repeat after a dropped connection / 5xx (GETs, upserts, idempotent bulk ops) */
   idempotent?: boolean;
+  /** Conditional GET: send If-None-Match; a 304 resolves with notModified=true */
+  ifNoneMatch?: string;
 }
+
+interface RawResponse<T> { status: number; data: T; etag: string | null; notModified: boolean }
 
 export class ApiClient {
   constructor(private readonly creds: Credentials) {}
@@ -30,10 +35,40 @@ export class ApiClient {
   }
 
   async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+    return (await this.send<T>(method, this.buildUrl(path, opts.query), opts)).data;
+  }
+
+  private buildUrl(path: string, query: RequestOptions['query']): URL {
     const url = new URL(this.creds.apiUrl + path);
-    for (const [k, v] of Object.entries(opts.query ?? {})) {
+    for (const [k, v] of Object.entries(query ?? {})) {
       if (v !== undefined && v !== '') url.searchParams.set(k, String(v));
     }
+    return url;
+  }
+
+  /**
+   * GET with an ETag cache: if the server reports the resource unchanged (304) the saved body is
+   * reused. Used for exports, which CI fetches over and over while translations rarely change.
+   */
+  async getCached<T>(path: string, query?: RequestOptions['query']): Promise<{ data: T; fromCache: boolean }> {
+    const url = this.buildUrl(path, query);
+    if (!cacheEnabled()) return { data: (await this.send<T>('GET', url, {})).data, fromCache: false };
+    const key = cacheKey(this.creds.apiUrl, this.creds.apiKey, url.toString());
+    const cached = readCache<T>(key);
+    const res = await this.send<T>('GET', url, { ifNoneMatch: cached?.etag });
+    if (res.notModified && cached) {
+      log.debug(`cache hit for ${url.pathname} (${cached.etag})`);
+      return { data: cached.data, fromCache: true };
+    }
+    if (res.notModified) {
+      // 304 without a cached body (cache wiped mid-run): fetch unconditionally
+      return { data: (await this.send<T>('GET', url, {})).data, fromCache: false };
+    }
+    if (res.etag) writeCache(key, res.etag, res.data);
+    return { data: res.data, fromCache: false };
+  }
+
+  private async send<T>(method: string, url: URL, opts: RequestOptions): Promise<RawResponse<T>> {
     const headers: Record<string, string> = {
       'X-API-Key': this.creds.apiKey,
       'User-Agent': userAgent(),
@@ -41,6 +76,7 @@ export class ApiClient {
     };
     // Only declare a JSON body when there is one — Fastify rejects an empty body with this header
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (opts.ifNoneMatch) headers['If-None-Match'] = opts.ifNoneMatch;
 
     const idempotent = opts.idempotent ?? (method === 'GET');
     const attempts = idempotent ? httpSettings.retries : 1;
@@ -62,6 +98,9 @@ export class ApiClient {
         throw mapped;
       }
       log.debug(`${method} ${url.pathname}${url.search} → ${res.status} (${Date.now() - started}ms)`);
+      if (res.status === 304) {
+        return { status: 304, data: undefined as T, etag: res.headers.get('etag'), notModified: true };
+      }
 
       const retryable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504;
       if (retryable && attempt < attempts) {
@@ -83,7 +122,7 @@ export class ApiClient {
         const d = data as { error?: string; message?: string } | undefined;
         throw httpError(res.status, d?.error || d?.message, method, url.pathname);
       }
-      return data as T;
+      return { status: res.status, data: data as T, etag: res.headers.get('etag'), notModified: false };
     }
   }
 

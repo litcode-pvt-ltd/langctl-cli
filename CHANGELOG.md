@@ -6,6 +6,7 @@
 - `langctl translate [project]`: fill missing translations with AI (DeepL) from the default language. `--to`, `--keys`, `--module`, `--overwrite`, `--dry-run` (uses no quota). Placeholders such as `{{name}}`, `{count}`, `%1$s` are preserved.
 - `langctl review [project]`: list AI translations awaiting review; `--approve` (narrow with `--keys` / `--languages`).
 - `pull --include-unreviewed`.
+- `pull` caches exports by ETag in `~/.langctl/cache`: when nothing changed on the server, the API answers `304 Not Modified` and the saved snapshot is reused. Set `LANGCTL_NO_CACHE=1` to disable. In CI, cache `~/.langctl/cache` (e.g. `actions/cache`) to benefit across runs.
 
 ### Changed
 - `pull` leaves out AI translations nobody has reviewed yet (your app falls back to the default language for them) and warns how many were held back.
