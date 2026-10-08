@@ -14,6 +14,7 @@ import {
 } from './commands/projects.js';
 import { pullCommand } from './commands/pull.js';
 import { pushCommand } from './commands/push.js';
+import { translateCommand } from './commands/translate.js';
 import {
   getTeamMemberCommand, inviteTeamMemberCommand, listInvitationsCommand, listTeamCommand, removeTeamMemberCommand,
   revokeInvitationCommand, updateTeamRoleCommand,
@@ -213,6 +214,16 @@ withGlobals(keys.command('unpublish <project> [keys...]')).description('move key
   .option('--all', 'unpublish every published key')
   .option('-m, --module <name>', 'unpublish every key in a module')
   .action(run((project: string, names: string[], opts) => publishKeysCommand(project, names, opts, false)));
+
+// ── AI translation ──────────────────────────────────────────────
+
+withGlobals(program.command('translate [project]')).description('fill missing translations with AI (DeepL) from the default language')
+  .option('-t, --to <codes>', 'comma-separated target languages (default: every non-default language)')
+  .option('-k, --keys <names>', 'only these keys (comma-separated)')
+  .option('-m, --module <name>', 'only keys in a module')
+  .option('--overwrite', 'retranslate keys that already have a translation')
+  .option('--dry-run', 'show what would be translated without using any AI translations')
+  .action(run((project: string | undefined, opts) => translateCommand(project, opts)));
 
 // ── Team & org ──────────────────────────────────────────────────
 
