@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-10-08
+
+### Added
+- `langctl translate [project]`: fill missing translations with AI (DeepL) from the default language. `--to`, `--keys`, `--module`, `--overwrite`, `--dry-run` (uses no quota). Placeholders such as `{{name}}`, `{count}`, `%1$s` are preserved.
+- `langctl review [project]`: list AI translations awaiting review; `--approve` (narrow with `--keys` / `--languages`).
+- `pull --include-unreviewed`.
+
+### Changed
+- `pull` leaves out AI translations nobody has reviewed yet (your app falls back to the default language for them) and warns how many were held back.
+
 ## 0.3.0 — 2026-10-08
 
 A rewrite focused on reliability in real projects and CI.
