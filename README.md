@@ -129,11 +129,12 @@ the pull fails and names both keys instead of silently dropping one.
 | Command | Description |
 | --- | --- |
 | `langctl init` | Set up a repo (auth if needed, write `langctl.json`). Flags: `--project --format --output --force`. |
-| `langctl pull [project]` | Download translations. `-l/--languages`, `-f/--format`, `-o/--output`, `-m/--module`, `--include-drafts`, `--check`, `--dry-run`, `--require-complete`. |
+| `langctl pull [project]` | Download translations. `-l/--languages`, `-f/--format`, `-o/--output`, `-m/--module`, `--include-drafts`, `--include-unreviewed`, `--check`, `--dry-run`, `--require-complete`. AI translations nobody has reviewed are left out (with a warning) until approved. |
 | `langctl push [project]` | Upload files. Default: source language only; `-l all` for every language. `--overwrite`, `--publish`, `--dry-run`, `-i/--input`. |
 | `langctl export [project]` | One-off export: `-l es -f android -o strings.xml`. |
 | `langctl import [project] <file>` | One-off import of a single file: `-l es`, `--overwrite`, `--publish`, `--dry-run`. |
 | `langctl translate [project]` | Fill missing translations with AI (DeepL) from the default language. `-t/--to es,fr`, `-k/--keys`, `-m/--module`, `--overwrite`, `--dry-run` (no quota used). Placeholders like `{{name}}` are kept as-is; uses the plan's monthly AI translations, or the org's own DeepL key if one is saved. |
+| `langctl review [project]` | List AI translations awaiting review; `--approve` approves them (narrow with `-k/--keys`, `-l/--languages`; `--yes` in CI). Editing a translation in the web app also counts as reviewing it. |
 | `langctl auth [--stdin]` | Store an API key in `~/.langctl/config.json` (mode 600). `echo "$KEY" \| langctl auth --stdin`. |
 | `langctl whoami` | Show org, key source, scopes and API latency. |
 | `langctl logout` · `langctl config` · `langctl formats` | Remove the stored key · show effective config · list formats. |

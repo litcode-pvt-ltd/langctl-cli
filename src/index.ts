@@ -15,6 +15,7 @@ import {
 import { pullCommand } from './commands/pull.js';
 import { pushCommand } from './commands/push.js';
 import { translateCommand } from './commands/translate.js';
+import { reviewCommand } from './commands/review.js';
 import {
   getTeamMemberCommand, inviteTeamMemberCommand, listInvitationsCommand, listTeamCommand, removeTeamMemberCommand,
   revokeInvitationCommand, updateTeamRoleCommand,
@@ -105,6 +106,7 @@ withGlobals(program.command('pull [project]'))
   .addOption(new Option('-d, --dir <path>', 'legacy: base directory for the default layout').hideHelp())
   .option('-m, --module <name>', 'only keys from this module')
   .option('--include-drafts', 'include unpublished keys (excluded by default)')
+  .option('--include-unreviewed', 'include AI translations nobody has reviewed yet (excluded by default)')
   .addOption(new Option('--no-published-only').hideHelp())
   .option('--check', 'do not write; exit 7 if any file is out of date (for CI)')
   .option('--dry-run', 'show what would change without writing')
@@ -224,6 +226,11 @@ withGlobals(program.command('translate [project]')).description('fill missing tr
   .option('--overwrite', 'retranslate keys that already have a translation')
   .option('--dry-run', 'show what would be translated without using any AI translations')
   .action(run((project: string | undefined, opts) => translateCommand(project, opts)));
+withGlobals(program.command('review [project]')).description('list AI translations awaiting review, or approve them')
+  .option('--approve', 'approve the listed translations (asks to confirm; --yes in CI)')
+  .option('-k, --keys <names>', 'only these keys (comma-separated)')
+  .option('-l, --languages <codes>', 'only these languages (comma-separated)')
+  .action(run((project: string | undefined, opts) => reviewCommand(project, opts)));
 
 // ── Team & org ──────────────────────────────────────────────────
 

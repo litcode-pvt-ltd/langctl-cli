@@ -107,6 +107,5 @@ export async function translateCommand(projectArg: string | undefined, opts: Tra
     ? 'using your own DeepL key'
     : usage?.limit != null ? `${usage.used}/${usage.limit} AI translations used this month` : `${usage?.used ?? done.length} AI translations used this month`;
   log.success(`Translated ${done.length} string(s) into ${plan.filter(p => p.keys.length).map(p => p.lang).join(', ')} (${quota}).`);
-  const live = new Set(plan.flatMap(p => p.keys).filter(k => k.published).map(k => k.key));
-  if (live.size) log.info(chalk.dim(`${live.size} of these key(s) are already published, so their new translations ship on the next pull — review them first if needed.`));
+  log.info(chalk.dim(`AI translations are held back from "langctl pull" until reviewed. Check them with "langctl review ${project.slug}", then approve with --approve (or edit them in the web app).`));
 }

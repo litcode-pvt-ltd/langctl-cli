@@ -15,6 +15,8 @@ export interface PullOptions {
   dir?: string;
   module?: string;
   includeDrafts?: boolean;
+  /** also ship AI translations nobody has reviewed yet */
+  includeUnreviewed?: boolean;
   /** legacy 0.2.x flag: --no-published-only */
   publishedOnly?: boolean;
   check?: boolean;
@@ -25,6 +27,7 @@ export interface PullOptions {
 interface ExportSnapshot {
   languages: string[];
   keys: Array<{ key: string; description: string | null; module: string | null; translations: Record<string, string> }>;
+  metadata?: { unreviewedSkipped?: number };
 }
 
 export async function pullCommand(projectArg: string | undefined, opts: PullOptions): Promise<void> {
@@ -51,6 +54,7 @@ export async function pullCommand(projectArg: string | undefined, opts: PullOpti
     project = await getProject(session, slug);
     snapshot = await session.api.get<ExportSnapshot>(`/orgs/${session.orgId}/projects/${project.id}/export`, {
       publishedOnly: includeDrafts ? 'false' : 'true',
+      includeUnreviewed: opts.includeUnreviewed ? 'true' : undefined,
       module,
     });
   } finally {
@@ -86,6 +90,7 @@ export async function pullCommand(projectArg: string | undefined, opts: PullOpti
       dryRun,
       files: files.map(f => ({ ...f, path: relative(process.cwd(), f.path) })),
       changed: changed.length,
+      unreviewedSkipped: snapshot.metadata?.unreviewedSkipped ?? 0,
     });
   } else {
     for (const f of files) {
@@ -95,6 +100,10 @@ export async function pullCommand(projectArg: string | undefined, opts: PullOpti
       log.out(`${icon} ${relative(process.cwd(), f.path)}  ${chalk.dim(verb)}${coverage}`);
     }
     log.info(chalk.dim(`${project.slug}: ${snapshot.keys.length} ${includeDrafts ? '' : 'published '}keys, ${languages.length} language(s), format ${format.id}`));
+    const unreviewed = snapshot.metadata?.unreviewedSkipped ?? 0;
+    if (unreviewed > 0) {
+      log.warn(`${unreviewed} AI translation(s) awaiting review were left out (your app falls back to ${project.defaultLanguage} for them). Review with "langctl review ${project.slug}", or pass --include-unreviewed.`);
+    }
     if (snapshot.keys.length === 0 && !includeDrafts) {
       log.warn('No published keys — drafts are excluded by default. Publish keys, or pass --include-drafts.');
     }
