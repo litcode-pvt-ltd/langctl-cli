@@ -18,8 +18,30 @@ export function configDir(): string {
   return process.env.LANGCTL_CONFIG_DIR ? resolve(process.env.LANGCTL_CONFIG_DIR) : join(homedir(), '.langctl');
 }
 
+// ── Profiles ───────────────────────────────────────────────────
+//
+// The default profile is ~/.langctl/config.json (unchanged since 0.2). Named profiles live in
+// ~/.langctl/profiles/<name>.json and are selected with --profile <name> or LANGCTL_PROFILE.
+
+const PROFILE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+
+/** The active profile name, or null for the default profile. */
+export function activeProfile(): string | null {
+  const raw = (flagOverrides.profile ?? process.env.LANGCTL_PROFILE ?? '').trim();
+  if (!raw || raw === 'default') return null;
+  if (!PROFILE_RE.test(raw)) {
+    throw usageError(`Invalid profile name "${raw}".`, 'Use letters, digits, ".", "_" or "-" (e.g. --profile client-a).');
+  }
+  return raw;
+}
+
+export function profileLabel(): string {
+  return activeProfile() ?? 'default';
+}
+
 export function configPath(): string {
-  return join(configDir(), 'config.json');
+  const profile = activeProfile();
+  return profile ? join(configDir(), 'profiles', `${profile}.json`) : join(configDir(), 'config.json');
 }
 
 export function readUserConfig(): UserConfig {
@@ -67,7 +89,7 @@ export interface Credentials {
   organizationId?: string;
 }
 
-export const flagOverrides: { apiKey?: string; apiUrl?: string } = {};
+export const flagOverrides: { apiKey?: string; apiUrl?: string; profile?: string } = {};
 
 export function resolveApiUrl(): string {
   return (flagOverrides.apiUrl || process.env.LANGCTL_API_URL || readUserConfig().apiBaseUrl || DEFAULT_API_URL).replace(/\/+$/, '');
@@ -126,6 +148,11 @@ export interface ProjectConfig {
   includeDrafts?: boolean;
   /** Only pull/push keys from this module */
   module?: string;
+  /**
+   * Key prefix for projects shared by several apps (e.g. "dashboard."): pull strips it (and skips
+   * keys without it), push adds it. A prefix without a trailing separator gets a "." appended.
+   */
+  prefix?: string;
 }
 
 export interface LoadedProjectConfig {
@@ -135,7 +162,7 @@ export interface LoadedProjectConfig {
   root: string;
 }
 
-const KNOWN_KEYS = new Set(['$schema', 'project', 'format', 'output', 'languages', 'sourceLanguage', 'includeDrafts', 'module']);
+const KNOWN_KEYS = new Set(['$schema', 'project', 'format', 'output', 'languages', 'sourceLanguage', 'includeDrafts', 'module', 'prefix']);
 
 /** Find langctl.json in the current directory or the nearest parent. */
 export function loadProjectConfig(cwd = process.cwd()): LoadedProjectConfig | null {
@@ -153,6 +180,9 @@ export function loadProjectConfig(cwd = process.cwd()): LoadedProjectConfig | nu
       if (unknown.length) {
         throw usageError(`${candidate} has unknown field(s): ${unknown.join(', ')}`,
           `Allowed: ${[...KNOWN_KEYS].filter(k => k !== '$schema').join(', ')}`);
+      }
+      if (config.prefix !== undefined && (typeof config.prefix !== 'string' || !config.prefix.trim())) {
+        throw usageError(`${candidate}: "prefix" must be a non-empty string, e.g. "dashboard."`);
       }
       if (config.languages !== undefined && !Array.isArray(config.languages)) {
         throw usageError(`${candidate}: "languages" must be an array of language codes`);
@@ -174,6 +204,31 @@ export function writeProjectConfig(path: string, config: ProjectConfig): void {
     ...(config.sourceLanguage ? { sourceLanguage: config.sourceLanguage } : {}),
     ...(config.includeDrafts ? { includeDrafts: true } : {}),
     ...(config.module ? { module: config.module } : {}),
+    ...(config.prefix ? { prefix: config.prefix } : {}),
   };
   writeFileSync(path, JSON.stringify(ordered, null, 2) + '\n');
+}
+
+// ── Key prefixes ───────────────────────────────────────────────
+
+/** "dashboard" → "dashboard."; prefixes that already end in a separator are kept as given. */
+export function normalizePrefix(prefix: string | undefined): string | undefined {
+  const p = prefix?.trim();
+  if (!p) return undefined;
+  return /[.:_/-]$/.test(p) ? p : `${p}.`;
+}
+
+/** The prefix in effect: the flag, else langctl.json's "prefix". */
+export function resolvePrefix(flag: string | undefined, cfg: ProjectConfig): string | undefined {
+  return normalizePrefix(flag ?? cfg.prefix);
+}
+
+/**
+ * Map key names typed by a user to the names stored in langctl: with a prefix configured,
+ * "common.save" and "dashboard.common.save" both mean "dashboard.common.save".
+ */
+export function withPrefix(name: string, prefix: string | undefined, known?: Set<string>): string {
+  if (!prefix || name.startsWith(prefix)) return name;
+  if (known && known.has(name) && !known.has(prefix + name)) return name;
+  return prefix + name;
 }

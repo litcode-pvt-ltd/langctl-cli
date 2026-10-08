@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.0 — 2026-10-09
+
+Fixes from a real Hindi rollout of a 3,000-key, three-app project.
+
+### Fixed
+- `translate` no longer fails a whole run when the provider can't translate a few strings
+  (`{h}h`, `98860 41022`, `+ {name}`): those are reported per key with their source text, everything
+  else is saved, and the command exits **8** (new: "partial — some strings need a human
+  translation"). Strings with nothing to translate are copied unchanged.
+- `translate`: API/provider failures exit 5 (network, 5xx) or 1 — never 2, which means invalid usage.
+- `translate`: with stdout piped, the summary and failures go to stderr instead of being lost among
+  the per-key lines.
+- `push` printed absolute input paths relative to the cwd (`../../../../var/…`); paths are printed as given.
+
+### Added
+- `translate`: progress counter (`Translating 312/889…`; a line about every 10% in CI), 100 strings
+  per request with 3 requests in flight, summary `Translated N, copied M unchanged, failed K`;
+  `--json` includes `failed` and `counts`. On servers that save AI translations themselves the CLI
+  no longer saves each key separately; on older servers it saves them 6 at a time.
+- `review -m/--module`.
+- Key prefixes for several apps in one project: `pull --strip-prefix <p>`, `push --prefix <p>`, or
+  `"prefix"` in `langctl.json` (both directions). Keys without the prefix are skipped on pull and counted.
+- `push --descriptions <file.json>` (flat `{ "key": "description" }`) and rich JSON input
+  (`{ "key": { "value", "description" } }`) for `push`/`import`.
+- Named profiles: `--profile <name>` / `LANGCTL_PROFILE` (`~/.langctl/profiles/<name>.json`);
+  the default profile is still `~/.langctl/config.json`. `whoami` and `config` show the profile.
+- Notice when a newer langctl is published (checked at most once a day, ≤1.5s, off in CI/`--json`/`--quiet`;
+  `LANGCTL_UPDATE_CHECK=0|1`). When the API doesn't know a path the CLI uses (404 route / 410), the
+  error says to upgrade.
+- README: API key format, how review state is set (AI vs. human), exit code 8.
+
+### Changed
+- `auth` asks before replacing a stored key that belongs to a different organization, and refuses
+  without `--yes` when not interactive (suggesting a profile instead).
+- `pull` always says when AI drafts were held back — also with `--json` (on stderr) unless `--quiet` —
+  and shows a language that is empty only because of drafts as `0 strings: N awaiting review`.
+
 ## 0.4.0 — 2026-10-08
 
 ### Added

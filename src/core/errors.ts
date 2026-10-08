@@ -10,6 +10,8 @@ export const ExitCode = {
   Network: 5,
   Limit: 6,
   Drift: 7,
+  /** Partial success: some strings could not be translated and need a human (e.g. `translate`) */
+  Partial: 8,
 } as const;
 
 export type ExitCodeValue = (typeof ExitCode)[keyof typeof ExitCode];
@@ -29,9 +31,20 @@ export class CliError extends Error {
 export const usageError = (message: string, hint?: string) => new CliError(message, ExitCode.Usage, hint);
 export const notFoundError = (message: string, hint?: string) => new CliError(message, ExitCode.NotFound, hint);
 
+/** Shown when the API no longer knows a path this CLI calls — almost always an outdated CLI. */
+export const UPGRADE_HINT = 'This version of langctl may be too old for the Langctl API. Upgrade with: npm i -g langctl@latest';
+
+/** Fastify's default 404 for an unknown route: "Route GET:/api/v1/… not found". */
+export const isMissingRoute = (status: number, message: string | undefined) =>
+  status === 410 || (status === 404 && /^Route [A-Z]+:\S+ not found$/i.test(message ?? ''));
+
 /** Map an HTTP error response from the API to a CliError with the right exit code and a useful hint. */
 export function httpError(status: number, serverMessage: string | undefined, method: string, path: string): CliError {
   const msg = serverMessage || `HTTP ${status}`;
+  if (isMissingRoute(status, serverMessage)) {
+    return new CliError(`The Langctl API does not support ${method} ${path} (${status}).`,
+      status === 410 ? ExitCode.Error : ExitCode.NotFound, UPGRADE_HINT, status);
+  }
   if (status === 401) {
     return new CliError('Your API key is invalid or has been revoked.', ExitCode.Auth,
       'Create a new key at https://app.langctl.com/organization/api-keys and run "langctl auth --stdin", or set LANGCTL_API_KEY.', status);

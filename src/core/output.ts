@@ -89,6 +89,49 @@ export function spinner(text: string): Spinner {
   };
 }
 
+export interface Progress {
+  /** Report `done` of `total` processed */
+  update(done: number): void;
+  /** Print a result line on stdout without garbling the spinner */
+  out(line: string): void;
+  stop(): void;
+}
+
+/**
+ * Counter for long operations: "Translating 312/889…". At a terminal it is a spinner line; in CI
+ * and pipes (where a spinner is invisible) it prints a plain stderr line every ~10%.
+ */
+export function progress(label: string, total: number): Progress {
+  const text = (n: number) => `${label} ${n}/${total}…`;
+  if (isInteractive() && !runtime.quiet && !runtime.verbose) {
+    const spin = spinner(text(0));
+    return {
+      update(n) { spin.text = text(n); },
+      out(line) {
+        if (runtime.json) return;
+        process.stderr.write('\r\x1b[2K');
+        process.stdout.write(line + '\n');
+      },
+      stop() { spin.stop(); },
+    };
+  }
+  const step = Math.max(1, Math.ceil(total / 10));
+  let next = step;
+  let last = -1;
+  return {
+    update(n) {
+      if (runtime.quiet || runtime.json || total < 1 || n === last) return;
+      if (n >= next || n === total) {
+        process.stderr.write(text(n) + '\n');
+        last = n;
+        while (next <= n) next += step;
+      }
+    },
+    out(line) { log.out(line); },
+    stop() {},
+  };
+}
+
 /** Minimal aligned table for human output. */
 export function table(rows: string[][], header?: string[]): void {
   const all = header ? [header, ...rows] : rows;

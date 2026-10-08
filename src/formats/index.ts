@@ -311,3 +311,36 @@ export function expandTemplate(template: string, lang: string, defaultLang: stri
 export function templateHasLanguage(template: string): boolean {
   return /\{(lang|lang_|android)\}/.test(template);
 }
+
+// ── Rich JSON input ({ "key": { "value": "…", "description": "…" } }) ──
+
+const RICH_FIELDS = new Set(['value', 'description']);
+
+const isRichValue = (v: unknown): v is { value: string; description?: string } =>
+  Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+  && typeof (v as { value?: unknown }).value === 'string'
+  && Object.keys(v as object).every(k => RICH_FIELDS.has(k))
+  && ['undefined', 'string'].includes(typeof (v as { description?: unknown }).description);
+
+/**
+ * Read a flat JSON file whose values carry descriptions: { "home.title": { "value": "Welcome", "description": "…" } }.
+ * Returns null for anything else (plain or nested JSON), so callers fall back to the normal parser.
+ * Only files where every object value has this exact shape count as rich.
+ */
+export function parseRichJson(content: string): { translations: Record<string, string>; descriptions: Record<string, string> } | null {
+  let data: unknown;
+  try { data = JSON.parse(content.replace(/^﻿/, '')); } catch { return null; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const values = Object.values(data as Record<string, unknown>);
+  const objects = values.filter(v => typeof v !== 'string');
+  if (objects.length === 0 || !objects.every(isRichValue)) return null;
+  const translations: Record<string, string> = {};
+  const descriptions: Record<string, string> = {};
+  for (const [key, v] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof v === 'string') { translations[key] = v; continue; }
+    const rich = v as { value: string; description?: string };
+    translations[key] = rich.value;
+    if (rich.description?.trim()) descriptions[key] = rich.description;
+  }
+  return { translations, descriptions };
+}

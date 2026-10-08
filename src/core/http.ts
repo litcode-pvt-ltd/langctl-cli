@@ -120,7 +120,9 @@ export class ApiClient {
       }
       if (!res.ok) {
         const d = data as { error?: string; message?: string } | undefined;
-        throw httpError(res.status, d?.error || d?.message, method, url.pathname);
+        // Fastify's own 404 ("Route GET:/… not found") is in `message`; ours are in `error`
+        const routeMessage = typeof d?.message === 'string' && /^Route /.test(d.message) ? d.message : undefined;
+        throw httpError(res.status, routeMessage || d?.error || d?.message, method, url.pathname);
       }
       return { status: res.status, data: data as T, etag: res.headers.get('etag'), notModified: false };
     }
@@ -166,6 +168,11 @@ export async function validateKey(api: ApiClient, apiKey: string): Promise<KeyIn
 }
 
 let cached: Session | null = null;
+
+/** Forget the cached session (tests; switching keys within one process). */
+export function resetSession(): void {
+  cached = null;
+}
 
 export async function getSession(): Promise<Session> {
   if (cached) return cached;

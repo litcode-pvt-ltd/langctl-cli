@@ -24,6 +24,7 @@ import { flagOverrides } from './core/config.js';
 import { CliError, ExitCode, usageError } from './core/errors.js';
 import { httpSettings } from './core/http.js';
 import { log, printJson, runtime } from './core/output.js';
+import { finishUpdateCheck, startUpdateCheck } from './core/update-check.js';
 import { VERSION } from './version.js';
 
 const collect = (value: string, previous: string[] = []) => [...previous, value];
@@ -37,6 +38,7 @@ function withGlobals(cmd: Command): Command {
     .option('-y, --yes', 'skip confirmation prompts (required for destructive commands in CI)')
     .option('--api-key <key>', 'API key (prefer the LANGCTL_API_KEY env var)')
     .option('--api-url <url>', 'API base URL (env: LANGCTL_API_URL)')
+    .option('--profile <name>', 'use a named credentials profile (env: LANGCTL_PROFILE)')
     .option('--timeout <seconds>', 'request timeout in seconds (env: LANGCTL_TIMEOUT)')
     .option('--no-color', 'disable colors (also honors NO_COLOR)');
 }
@@ -67,12 +69,16 @@ program.hook('preAction', (_root, action) => {
   if (o.color === false || process.env.NO_COLOR) chalk.level = 0;
   if (typeof o.apiKey === 'string') flagOverrides.apiKey = o.apiKey;
   if (typeof o.apiUrl === 'string') flagOverrides.apiUrl = o.apiUrl;
+  if (typeof o.profile === 'string') flagOverrides.profile = o.profile;
   if (o.timeout !== undefined) {
     const s = Number(o.timeout);
     if (!Number.isFinite(s) || s <= 0) throw usageError('--timeout must be a positive number of seconds');
     httpSettings.timeoutMs = s * 1000;
   }
+  updateCheck = startUpdateCheck();
 });
+
+let updateCheck: Promise<string | null> | null = null;
 
 // ── Setup & auth ────────────────────────────────────────────────
 
@@ -111,6 +117,7 @@ withGlobals(program.command('pull [project]'))
   .option('--check', 'do not write; exit 7 if any file is out of date (for CI)')
   .option('--dry-run', 'show what would change without writing')
   .option('--require-complete', 'exit 1 if any language is missing translations')
+  .option('--strip-prefix <prefix>', 'only keys with this prefix, written without it (default: "prefix" in langctl.json)')
   .action(run((project: string | undefined, opts) => pullCommand(project, { ...opts, languages: opts.languages ?? opts.language })));
 
 withGlobals(program.command('push [project]'))
@@ -121,6 +128,8 @@ withGlobals(program.command('push [project]'))
   .option('-m, --module <name>', 'assign new keys to this module')
   .option('--overwrite', 'replace existing translations (default: only add new keys/languages)')
   .option('--publish', 'publish the uploaded keys')
+  .option('--prefix <prefix>', 'add this prefix to every key (default: "prefix" in langctl.json)')
+  .option('--descriptions <file>', 'flat JSON { "key": "description" } stored with the keys (existing keys need --overwrite)')
   .option('--dry-run', 'show what would change without uploading')
   .action(run((project: string | undefined, opts) => pushCommand(project, opts)));
 
@@ -230,6 +239,7 @@ withGlobals(program.command('review [project]')).description('list AI translatio
   .option('--approve', 'approve the listed translations (asks to confirm; --yes in CI)')
   .option('-k, --keys <names>', 'only these keys (comma-separated)')
   .option('-l, --languages <codes>', 'only these languages (comma-separated)')
+  .option('-m, --module <name>', 'only keys in a module')
   .action(run((project: string | undefined, opts) => reviewCommand(project, opts)));
 
 // ── Team & org ──────────────────────────────────────────────────
@@ -270,6 +280,7 @@ In CI (no config file needed):
 Exit codes:
   0 ok · 1 error · 2 invalid usage · 3 auth/permission · 4 not found
   5 network/API unavailable · 6 plan limit reached · 7 files out of date (--check)
+  8 partial: some strings could not be AI-translated and need a human (translate)
 
 Docs: https://langctl.com/docs`);
 
@@ -290,6 +301,7 @@ async function main(): Promise<void> {
   } catch (err) {
     process.exitCode = handleError(err);
   }
+  await finishUpdateCheck(updateCheck);
 }
 
 function handleError(err: unknown): number {

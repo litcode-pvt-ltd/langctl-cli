@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { configPath, loadProjectConfig, maskApiKey, readUserConfig, resolveApiUrl, resolveCredentials } from '../core/config.js';
+import { configPath, loadProjectConfig, maskApiKey, profileLabel, readUserConfig, resolveApiUrl, resolveCredentials } from '../core/config.js';
 import { log, printJson, runtime } from '../core/output.js';
 import { FORMATS } from '../formats/index.js';
 
@@ -13,6 +13,7 @@ export function configCommand(): void {
     apiKey: creds ? maskApiKey(creds.apiKey) : null,
     apiKeySource: creds ? (creds.source === 'env' ? 'LANGCTL_API_KEY' : creds.source === 'flag' ? '--api-key' : configPath()) : null,
     organization: user.organizationName ?? null,
+    profile: profileLabel(),
     userConfig: configPath(),
     projectConfig: project ? { path: project.path, ...project.config } : null,
   };
@@ -20,6 +21,7 @@ export function configCommand(): void {
   log.out(`api url       ${data.apiUrl}`);
   log.out(`api key       ${data.apiKey ?? chalk.yellow('not set')}${data.apiKeySource ? chalk.dim(`  (${data.apiKeySource})`) : ''}`);
   if (data.organization) log.out(`organization  ${data.organization}`);
+  log.out(`profile       ${data.profile}`);
   log.out(`user config   ${data.userConfig}`);
   if (project) {
     log.out(`project file  ${project.path}`);
